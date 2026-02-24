@@ -73,6 +73,35 @@ data
 python3 data/tools/convert_mot17_to_coco.py
 python3 data/tools/convert_mot20_to_coco.py
 ```
+### Convert custom HSPOT dataset to COCO format
+If you have a custom HSPOT dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/HSPOT`:
+```
+data
+|——————HSPOT
+|        └——————train
+|        |        └——————<sequence_1>
+|        |        |        └——————img1
+|        |        |        └——————gt/gt.txt
+|        |        |        └——————det/det.txt
+|        |        |        └——————seqinfo.ini
+|        └——————val
+|        |        └——————<sequence_k>
+|        └——————test
+|                 └——————<sequence_m>
+```
+
+Run:
+```shell
+python3 data/tools/convert_hspot_to_coco.py --data-path data/HSPOT --splits train,val,test
+```
+
+This creates:
+```text
+data/HSPOT/annotations/train.json
+data/HSPOT/annotations/val.json
+data/HSPOT/annotations/test.json
+```
+
 ## Running the experiments and evaluation
 ### Run BoostTrack
 To run the BoostTrack on MOT17 and MOT20 validation sets run the following:
