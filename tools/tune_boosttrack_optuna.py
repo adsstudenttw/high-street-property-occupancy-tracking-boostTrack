@@ -12,8 +12,21 @@ from pathlib import Path
 import optuna
 from optuna.trial import TrialState
 
+from default_settings import BoostTrackSettings, GeneralSettings
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+FLOAT_PARAM_KEYS = {
+    "det_thresh",
+    "iou_threshold",
+    "lambda_iou",
+    "lambda_mhd",
+    "lambda_shape",
+    "dlo_boost_coef",
+}
+INT_PARAM_KEYS = {"min_hits", "max_age"}
+BOOL_INT_PARAM_KEYS = {"use_dlo_boost", "use_duo_boost"}
+ALL_PARAM_KEYS = FLOAT_PARAM_KEYS | INT_PARAM_KEYS | BOOL_INT_PARAM_KEYS
 
 
 def parse_args():
@@ -77,6 +90,21 @@ def parse_args():
 
     parser.add_argument("--skip-final-test-eval", action="store_true")
     parser.add_argument("--output-json", type=str, default=None)
+    parser.add_argument(
+        "--fixed-defaults",
+        action="store_true",
+        help="Fix tuned hyperparameters to default BoostTrack settings for the selected dataset.",
+    )
+    parser.add_argument(
+        "--fixed-param",
+        action="append",
+        default=[],
+        help=(
+            "Fix/override one tuned parameter as key=value. "
+            "Valid keys: det_thresh,iou_threshold,min_hits,max_age,lambda_iou,lambda_mhd,lambda_shape,"
+            "dlo_boost_coef,use_dlo_boost,use_duo_boost. Can be repeated."
+        ),
+    )
 
     # MLflow (supports external hosted tracking servers).
     parser.add_argument(
@@ -102,6 +130,73 @@ def infer_benchmark(dataset):
     """Infer TrackEval benchmark name from a dataset identifier."""
     mapping = {"mot17": "MOT17", "mot20": "MOT20", "hspot": "hspot"}
     return mapping.get(dataset.lower(), dataset.upper())
+
+
+def default_tuning_params(dataset):
+    """Return default BoostTrack hyperparameters for the selected dataset."""
+    dataset_key = dataset.lower()
+    det_thresh = GeneralSettings.dataset_specific_settings.get(dataset_key, {}).get(
+        "det_thresh", GeneralSettings.values["det_thresh"]
+    )
+    dlo_boost_coef = BoostTrackSettings.dataset_specific_settings.get(dataset_key, {}).get(
+        "dlo_boost_coef", BoostTrackSettings.values["dlo_boost_coef"]
+    )
+    return {
+        "det_thresh": float(det_thresh),
+        "iou_threshold": float(GeneralSettings.values["iou_threshold"]),
+        "min_hits": int(GeneralSettings.values["min_hits"]),
+        "max_age": int(GeneralSettings.values["max_age"]),
+        "lambda_iou": float(BoostTrackSettings.values["lambda_iou"]),
+        "lambda_mhd": float(BoostTrackSettings.values["lambda_mhd"]),
+        "lambda_shape": float(BoostTrackSettings.values["lambda_shape"]),
+        "dlo_boost_coef": float(dlo_boost_coef),
+        "use_dlo_boost": int(bool(BoostTrackSettings.values["use_dlo_boost"])),
+        "use_duo_boost": int(bool(BoostTrackSettings.values["use_duo_boost"])),
+    }
+
+
+def parse_fixed_params(raw_items):
+    """Parse repeated fixed parameter overrides from key=value inputs."""
+    fixed_params = {}
+    for item in raw_items:
+        if "=" not in item:
+            raise ValueError(f"Invalid --fixed-param '{item}'. Expected key=value.")
+        key, raw_value = item.split("=", 1)
+        key = key.strip()
+        raw_value = raw_value.strip()
+        if key not in ALL_PARAM_KEYS:
+            raise ValueError(
+                f"Invalid --fixed-param key '{key}'. "
+                "Expected one of det_thresh,iou_threshold,min_hits,max_age,lambda_iou,"
+                "lambda_mhd,lambda_shape,dlo_boost_coef,use_dlo_boost,use_duo_boost."
+            )
+        if raw_value == "":
+            raise ValueError(f"Invalid --fixed-param '{item}'. Value cannot be empty.")
+        if key in FLOAT_PARAM_KEYS:
+            value = float(raw_value)
+        elif key in INT_PARAM_KEYS:
+            value = int(raw_value)
+        else:
+            lowered = raw_value.lower()
+            if lowered in {"0", "false"}:
+                value = 0
+            elif lowered in {"1", "true"}:
+                value = 1
+            else:
+                raise ValueError(
+                    f"Invalid --fixed-param '{item}'. Boolean parameters expect 0/1/true/false."
+                )
+        fixed_params[key] = value
+    return fixed_params
+
+
+def resolve_fixed_params(args):
+    """Resolve fixed parameter values from defaults and explicit key=value overrides."""
+    fixed_params = {}
+    if args.fixed_defaults:
+        fixed_params.update(default_tuning_params(args.dataset))
+    fixed_params.update(parse_fixed_params(args.fixed_param))
+    return fixed_params
 
 
 def parse_mlflow_tags(raw_tags):
@@ -328,7 +423,7 @@ def build_runtime_env(args):
     return env
 
 
-def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags):
+def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags, fixed_params):
     """Start and initialize the parent MLflow run for the whole tuning session."""
     if mlflow is None:
         return False
@@ -365,8 +460,11 @@ def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags):
             "btpp_arg_no_sb": int(args.btpp_arg_no_sb),
             "btpp_arg_no_vt": int(args.btpp_arg_no_vt),
             "mlflow_tracking_uri": tracking_uri,
+            "fixed_defaults": int(args.fixed_defaults),
         }
     )
+    if fixed_params:
+        mlflow.set_tag("fixed_params", json.dumps(fixed_params, sort_keys=True))
     return True
 
 
@@ -398,20 +496,57 @@ def create_study(args, storage):
     )
 
 
-def suggest_trial_params(trial, args):
+def suggest_trial_params(trial, args, fixed_params):
     """Sample one trial's hyperparameters from the configured search space."""
-    return {
-        "det_thresh": trial.suggest_float("det_thresh", args.det_thresh_min, args.det_thresh_max),
-        "iou_threshold": trial.suggest_float("iou_threshold", args.iou_thresh_min, args.iou_thresh_max),
-        "min_hits": trial.suggest_int("min_hits", args.min_hits_min, args.min_hits_max),
-        "max_age": trial.suggest_int("max_age", args.max_age_min, args.max_age_max),
-        "lambda_iou": trial.suggest_float("lambda_iou", args.lambda_min, args.lambda_max),
-        "lambda_mhd": trial.suggest_float("lambda_mhd", args.lambda_min, args.lambda_max),
-        "lambda_shape": trial.suggest_float("lambda_shape", args.lambda_min, args.lambda_max),
-        "dlo_boost_coef": trial.suggest_float("dlo_boost_coef", args.dlo_boost_min, args.dlo_boost_max),
-        "use_dlo_boost": trial.suggest_categorical("use_dlo_boost", [0, 1]),
-        "use_duo_boost": trial.suggest_categorical("use_duo_boost", [0, 1]),
+    params = {
+        "det_thresh": trial.suggest_float(
+            "det_thresh",
+            float(fixed_params["det_thresh"]) if "det_thresh" in fixed_params else args.det_thresh_min,
+            float(fixed_params["det_thresh"]) if "det_thresh" in fixed_params else args.det_thresh_max,
+        ),
+        "iou_threshold": trial.suggest_float(
+            "iou_threshold",
+            float(fixed_params["iou_threshold"]) if "iou_threshold" in fixed_params else args.iou_thresh_min,
+            float(fixed_params["iou_threshold"]) if "iou_threshold" in fixed_params else args.iou_thresh_max,
+        ),
+        "min_hits": trial.suggest_int(
+            "min_hits",
+            int(fixed_params["min_hits"]) if "min_hits" in fixed_params else args.min_hits_min,
+            int(fixed_params["min_hits"]) if "min_hits" in fixed_params else args.min_hits_max,
+        ),
+        "max_age": trial.suggest_int(
+            "max_age",
+            int(fixed_params["max_age"]) if "max_age" in fixed_params else args.max_age_min,
+            int(fixed_params["max_age"]) if "max_age" in fixed_params else args.max_age_max,
+        ),
+        "lambda_iou": trial.suggest_float(
+            "lambda_iou",
+            float(fixed_params["lambda_iou"]) if "lambda_iou" in fixed_params else args.lambda_min,
+            float(fixed_params["lambda_iou"]) if "lambda_iou" in fixed_params else args.lambda_max,
+        ),
+        "lambda_mhd": trial.suggest_float(
+            "lambda_mhd",
+            float(fixed_params["lambda_mhd"]) if "lambda_mhd" in fixed_params else args.lambda_min,
+            float(fixed_params["lambda_mhd"]) if "lambda_mhd" in fixed_params else args.lambda_max,
+        ),
+        "lambda_shape": trial.suggest_float(
+            "lambda_shape",
+            float(fixed_params["lambda_shape"]) if "lambda_shape" in fixed_params else args.lambda_min,
+            float(fixed_params["lambda_shape"]) if "lambda_shape" in fixed_params else args.lambda_max,
+        ),
+        "dlo_boost_coef": trial.suggest_float(
+            "dlo_boost_coef",
+            float(fixed_params["dlo_boost_coef"]) if "dlo_boost_coef" in fixed_params else args.dlo_boost_min,
+            float(fixed_params["dlo_boost_coef"]) if "dlo_boost_coef" in fixed_params else args.dlo_boost_max,
+        ),
+        "use_dlo_boost": trial.suggest_categorical(
+            "use_dlo_boost", [int(fixed_params["use_dlo_boost"])] if "use_dlo_boost" in fixed_params else [0, 1]
+        ),
+        "use_duo_boost": trial.suggest_categorical(
+            "use_duo_boost", [int(fixed_params["use_duo_boost"])] if "use_duo_boost" in fixed_params else [0, 1]
+        ),
     }
+    return params
 
 
 def run_trial(args, env, mlflow, val_subset, trial, params):
@@ -465,11 +600,11 @@ def run_trial(args, env, mlflow, val_subset, trial, params):
             mlflow.end_run(status=trial_run_status)
 
 
-def build_objective(args, env, mlflow, val_subset):
+def build_objective(args, env, mlflow, val_subset, fixed_params):
     """Build the Optuna objective closure bound to runtime context."""
     def objective(trial):
         """Evaluate a sampled trial and return validation HOTA."""
-        params = suggest_trial_params(trial, args)
+        params = suggest_trial_params(trial, args, fixed_params)
         return run_trial(args, env, mlflow, val_subset, trial, params)
 
     return objective
@@ -500,7 +635,9 @@ def evaluate_best_on_test(args, env, best_params, mlflow):
     return final_test_exp, test_hota
 
 
-def build_summary(args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri):
+def build_summary(
+    args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri, fixed_params
+):
     """Assemble the final summary payload for JSON persistence and logging."""
     return {
         "study_name": args.study_name,
@@ -518,6 +655,7 @@ def build_summary(args, study, best_trial, best_params, final_test_exp, test_hot
         "final_test_hota": test_hota,
         "optuna_db": str(db_path),
         "mlflow_tracking_uri": tracking_uri,
+        "fixed_params": fixed_params,
     }
 
 
@@ -549,6 +687,7 @@ def main():
     """Orchestrate the full tuning workflow from setup to final reporting."""
     args = parse_args()
     args.benchmark = args.benchmark or infer_benchmark(args.dataset)
+    fixed_params = resolve_fixed_params(args)
     mlflow_tags = parse_mlflow_tags(args.mlflow_tag)
     output_json, db_path, storage = resolve_output_paths(args)
     env = build_runtime_env(args)
@@ -557,16 +696,18 @@ def main():
     parent_run_status = "FAILED"
 
     try:
-        parent_run_started = start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags)
+        parent_run_started = start_parent_mlflow_run(
+            mlflow, args, tracking_uri, mlflow_tags, fixed_params
+        )
         val_subset = determine_val_subset(args, mlflow)
         study = create_study(args, storage)
-        objective = build_objective(args, env, mlflow, val_subset)
+        objective = build_objective(args, env, mlflow, val_subset, fixed_params)
         run_optimization(args, study, objective)
         best_trial = get_best_trial(study)
         best_params = dict(best_trial.params)
         final_test_exp, test_hota = evaluate_best_on_test(args, env, best_params, mlflow)
         summary = build_summary(
-            args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri
+            args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri, fixed_params
         )
         save_summary(summary, output_json)
         log_parent_mlflow_results(mlflow, args, summary, output_json, db_path)

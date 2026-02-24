@@ -56,7 +56,7 @@ external/weights/
 # Local datasets (not versioned)
 data/MOT17/
 data/MOT20/
-data/HSPOT/
+data/hspot/
 data/dancetrack/
 data/DanceTrack/
 data/CityPersons/

@@ -1,159 +1,101 @@
-# BoostTrack/BoostTrack++ repository
+### Step-by-step: SURF + hspot + MLflow + tuning
+This repository includes a Docker workflow for Ubuntu 22.04 CUDA VMs. Dependencies are installed in-container with `uv`.
 
-> [**BoostTrack: Boosting the similarity measure and detection confidence for improved multiple object tracking**](https://doi.org/10.1007/s00138-024-01531-5)
-> 
-> 
-> [**BoostTrack++: using tracklet information to detect more objects in multiple object tracking**](https://arxiv.org/abs/2408.13003)
-> 
-> Vukasin Stanojevic, Branimir Todorovic
-> 
-
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/boosttrack-using-tracklet-information-to/multi-object-tracking-on-mot17)](https://paperswithcode.com/sota/multi-object-tracking-on-mot17?p=boosttrack-using-tracklet-information-to)
-
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/boosttrack-using-tracklet-information-to/multi-object-tracking-on-mot20-1)](https://paperswithcode.com/sota/multi-object-tracking-on-mot20-1?p=boosttrack-using-tracklet-information-to)
-<p align="center"><img src="assets/plts.jpg" width="1000"/><br>HOTA and IDF1 scores on MOT17 and MOT20 datasets.</p>
-
-## Abstract
-Handling unreliable detections and avoiding identity switches are crucial for the success of multiple object tracking (MOT). Ideally, MOT algorithm should use true positive detections only, work in real-time and produce no identity switches. To approach the described ideal solution, we present the BoostTrack, a simple yet effective tracing-by-detection MOT method that utilizes several lightweight plug and play additions to improve MOT performance. We design a detection-tracklet confidence score and use it to scale the similarity measure and implicitly favour high detection confidence and high tracklet confidence pairs in one-stage association. To reduce the ambiguity arising from using intersection over union (IoU), we propose a novel Mahalanobis distance and shape similarity additions to boost the overall similarity measure. To utilize low-detection score bounding boxes in one-stage association, we propose to boost the confidence scores of two groups of detections:  the detections we assume to correspond to the existing tracked object, and the detections we assume to correspond to a previously undetected object. The proposed additions are orthogonal to the existing approaches, and we combine them with interpolation and camera motion compensation to achieve results comparable to the standard benchmark solutions while retaining real-time execution speed. When combined with appearance similarity, our method outperforms all standard benchmark solutions on MOT17 and MOT20 datasets. It ranks first among online methods in HOTA metric in the MOT Challenge on MOT17 and MOT20 test sets. 
-<p align="center"><img src="assets/overview.png" width="600"/></p>
-
-## Tracking performance
-### Results on MOT17 test set
-| Method       | HOTA    | MOTA   | IDF1   |  IDSW  |
-|--------------|---------|--------|--------|--------|
-| BoostTrack   | 65.4    | 80.5   | 80.2   | 1104 |
-| BoostTrack+  | 66.4    | 80.6   | 81.8   | 1086 |
-| BoostTrack++ | 66.6    | 80.7   | 82.2   | 1062 |
-
-### Results on MOT20 test set
-| Method      | HOTA  | MOTA  |  IDF1  |  IDSW  |
-|-------------|-------|-------|--------|--------|
-|BoostTrack   | 63   | 76.4  | 76.5 | 992 |
-|BoostTrack+  | 66.2 | 77.2  | 81.5 | 899 |
-|BoostTrack++ | 66.4 | 77.7  | 82.0 | 762 |
-
-## Installation
-We tested the code on Ubuntu 22.04. and the desktop with 13th Gen Intel(R) Core(TM) i9-13900K CPU and NVIDIA GeForce RTX 3080 GPU.
-
-**Step 1.** Download repository and set up the conda environment.
-
-Note: g++ is required to install all the requirements.
-```shell
-gh repo clone vukasin-stanojevic/BoostTrack
-cd BoostTrack
-conda env create -f boost-track-env.yml
-conda activate boostTrack
-```
-Due to numpy version error, single line of code in mapping.py file from onnx module should be modified. The line 25 of the file should be replaced with the line:
-```python
-    int(TensorProto.STRING): np.dtype(object)
-```
-
-**Step 2.** Download the model weights and set up the datasets.
+1. Download the model weights and set up the datasets.
 
 We use the same weights as [Deep OC-SORT](https://github.com/GerardMaggiolino/Deep-OC-SORT/tree/main). The weights can be downloaded from the [link](https://drive.google.com/drive/folders/15hZcR4bW_Z9hEaXXjeWhQl_jwRKllauG?usp=sharing).
 
-*2.1.* Download the weights and place to BoostTrack/external/weights folder.
+Download the weights and place to `BoostTrack/external/weights` folder.
 
-*2.2.* Download MOT17 and MOT20 datasets from the [MOT Challenge website](https://motchallenge.net/).
-
-*2.3.* Place the files under BoostTrack/data folder:
-```
-data
-|——————MOT17
-|        └——————train
-|        └——————test
-|——————MOT20
-|        └——————train
-|        └——————test
-```
-*2.4.* Run:
-
+2. Set up Docker + NVIDIA runtime on the SURF VM:
 ```shell
-python3 data/tools/convert_mot17_to_coco.py
-python3 data/tools/convert_mot20_to_coco.py
+git clone <your-repo-url>
+cd <repo-folder>
+make vm-bootstrap
 ```
-### Convert custom hspot dataset to COCO format
-If you have a custom hspot dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/hspot`:
-```
-data
-|——————hspot
-|        └——————train
-|        |        └——————<sequence_1>
-|        |        |        └——————img1
-|        |        |        └——————gt/gt.txt
-|        |        |        └——————det/det.txt
-|        |        |        └——————seqinfo.ini
-|        └——————val
-|        |        └——————<sequence_k>
-|        └——————test
-|                 └——————<sequence_m>
-```
-
-Run:
+Then re-login (or run `newgrp docker`), and verify:
 ```shell
-python3 data/tools/convert_hspot_to_coco.py --data-path data/hspot --splits train,val,test
+make docker-build
+make docker-gpu-check
 ```
 
-This creates:
+3. Place your custom hspot dataset under `data/hspot`:
 ```text
-data/hspot/annotations/train.json
-data/hspot/annotations/val.json
-data/hspot/annotations/test.json
+data/hspot/{train,val,test}/<sequence>/{img1,det,gt,seqinfo.ini}
 ```
 
-### Hyperparameter tuning with Optuna (1 GPU)
-You can tune BoostTrack hyperparameters with Optuna (TPE Bayesian optimization + Median pruning) on the validation split and then run a final evaluation on the test split.
-
-Prerequisites:
-- Ground-truth folders and seqmaps must be available for TrackEval under `results/gt/` for both `*-val` and `*-test`.
-- Optuna must be installed (`optuna` is included in `boost-track-env.yml`).
-
-For hspot, you can prepare TrackEval ground-truth folders and seqmaps automatically with:
+4. Convert hspot annotations to COCO:
 ```shell
-bash tools/setup_hspot_trackeval_gt.sh
+make hspot-convert
 ```
-If your test split does not contain GT files, run:
+
+5. Prepare TrackEval ground-truth layout:
 ```shell
-bash tools/setup_hspot_trackeval_gt.sh --allow-missing-gt
+make hspot-trackeval-setup
 ```
-
-Run (example on `mot17`, GPU 0):
+If your test split has no `gt/gt.txt`:
 ```shell
-python3 tools/tune_boosttrack_optuna.py \
-  --dataset mot17 \
-  --benchmark MOT17 \
-  --gpu-id 0 \
-  --n-trials 30 \
-  --pruning-seqs 2
+make hspot-trackeval-setup-allow-missing-gt
 ```
+TrackEval is already included in this repository (`external/TrackEval`), so no separate TrackEval installation is required.
 
-What this script does:
-- Samples hyperparameters with Optuna TPE (Bayesian optimization).
-- Runs a pruning stage on a subset of validation sequences (`--pruning-seqs`) and prunes weak trials early.
-- Runs full validation evaluation and optimizes for `HOTA`.
-- Runs a final evaluation on the test split with the best validation hyperparameters.
-- Optionally logs study/trial parameters and metrics to MLflow (including externally hosted MLflow servers).
-
-Track on an external MLflow server:
+6. Configure remote MLflow (running on another VM):
 ```shell
-python3 tools/tune_boosttrack_optuna.py \
-  --dataset hspot \
-  --benchmark hspot \
-  --gpu-id 0 \
-  --n-trials 30 \
-  --pruning-seqs 2 \
-  --mlflow-tracking-uri https://<your-mlflow-host> \
-  --mlflow-experiment BoostTrack-hspot \
-  --mlflow-run-name hspot_optuna_run_01 \
-  --mlflow-log-summary-json
+export MLFLOW_TRACKING_URI=http://<mlflow-host>:5000
 ```
-Optional tags can be attached with repeated `--mlflow-tag key=value` arguments.
-For authenticated servers, set credentials via environment variables (for example `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD`) before running.
+If required, also set auth variables such as:
+```shell
+export MLFLOW_TRACKING_USERNAME=<user>
+export MLFLOW_TRACKING_PASSWORD=<password>
+```
 
-Outputs:
-- Optuna study DB (default): `results/optuna/boosttrack_hota_tuning.db`
-- Summary JSON (default): `results/optuna/boosttrack_hota_tuning_summary.json`
+7. Run a baseline on the validation split (default BoostTrack hyperparameters, logged to MLflow):
+```shell
+make baseline-hspot-val MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI
+```
+Optional override:
+```shell
+make baseline-hspot-val \
+  MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI \
+  BASELINE_MLFLOW_EXPERIMENT=BoostTrack-Baselines \
+  BASELINE_MLFLOW_RUN_NAME=hspot_baseline_val_run01
+```
+
+8. Run hyperparameter tuning (validation HOTA, 1 GPU):
+```shell
+make tune-hspot MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI
+```
+Example with custom settings:
+```shell
+make tune-hspot \
+  MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI \
+  TUNE_TRIALS=50 \
+  TUNE_EXTRA_ARGS="--mlflow-experiment BoostTrack-hspot --mlflow-run-name surf_vm_run_01 --mlflow-log-summary-json"
+```
+If test GT is unavailable, add:
+```shell
+TUNE_EXTRA_ARGS="--skip-final-test-eval"
+```
+
+9. Final evaluation:
+- By default, `tools/tune_boosttrack_optuna.py` performs a final test evaluation using the best validation hyperparameters.
+- You can also run TrackEval manually:
+```shell
+python3 external/TrackEval/scripts/run_mot_challenge.py \
+  --SPLIT_TO_EVAL test \
+  --GT_FOLDER results/gt/ \
+  --TRACKERS_FOLDER results/trackers/ \
+  --BENCHMARK hspot \
+  --TRACKERS_TO_EVAL <tracker_name>
+```
+For tuning runs with post-processing enabled (default), `<tracker_name>` is typically `<exp_name>_post_gbi`.
+
+Main outputs:
+- Baseline Optuna DB: `results/optuna/hspot_baseline_val.db`
+- Baseline summary JSON: `results/optuna/hspot_baseline_val_summary.json`
+- Optuna DB: `results/optuna/boosttrack_hota_tuning.db`
+- Tuning summary JSON: `results/optuna/boosttrack_hota_tuning_summary.json`
+- Tracking results: `results/trackers/hspot-val/` and `results/trackers/hspot-test/`
 
 ## Running the experiments and evaluation
 ### Run BoostTrack
