@@ -175,6 +175,8 @@ class EmbeddingComputer:
                 return self._get_general_model()
         elif self.dataset == "dance":
             path = "external/weights/dance_sbs_S50.pth"
+        elif self.dataset == "hspot":
+            return self._get_general_model()
         else:
             raise RuntimeError("Need the path for a new ReID model.")
 

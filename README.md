@@ -74,10 +74,10 @@ python3 data/tools/convert_mot17_to_coco.py
 python3 data/tools/convert_mot20_to_coco.py
 ```
 ### Convert custom HSPOT dataset to COCO format
-If you have a custom HSPOT dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/HSPOT`:
+If you have a custom HSPOT dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/hspot`:
 ```
 data
-|——————HSPOT
+|——————hspot
 |        └——————train
 |        |        └——————<sequence_1>
 |        |        |        └——————img1
@@ -92,15 +92,68 @@ data
 
 Run:
 ```shell
-python3 data/tools/convert_hspot_to_coco.py --data-path data/HSPOT --splits train,val,test
+python3 data/tools/convert_hspot_to_coco.py --data-path data/hspot --splits train,val,test
 ```
 
 This creates:
 ```text
-data/HSPOT/annotations/train.json
-data/HSPOT/annotations/val.json
-data/HSPOT/annotations/test.json
+data/hspot/annotations/train.json
+data/hspot/annotations/val.json
+data/hspot/annotations/test.json
 ```
+
+### Hyperparameter tuning with Optuna (1 GPU)
+You can tune BoostTrack hyperparameters with Optuna (TPE Bayesian optimization + Median pruning) on the validation split and then run a final evaluation on the test split.
+
+Prerequisites:
+- Ground-truth folders and seqmaps must be available for TrackEval under `results/gt/` for both `*-val` and `*-test`.
+- Optuna must be installed (`optuna` is included in `boost-track-env.yml`).
+
+For HSPOT, you can prepare TrackEval ground-truth folders and seqmaps automatically with:
+```shell
+bash tools/setup_hspot_trackeval_gt.sh
+```
+If your test split does not contain GT files, run:
+```shell
+bash tools/setup_hspot_trackeval_gt.sh --allow-missing-gt
+```
+
+Run (example on `mot17`, GPU 0):
+```shell
+python3 tools/tune_boosttrack_optuna.py \
+  --dataset mot17 \
+  --benchmark MOT17 \
+  --gpu-id 0 \
+  --n-trials 30 \
+  --pruning-seqs 2
+```
+
+What this script does:
+- Samples hyperparameters with Optuna TPE (Bayesian optimization).
+- Runs a pruning stage on a subset of validation sequences (`--pruning-seqs`) and prunes weak trials early.
+- Runs full validation evaluation and optimizes for `HOTA`.
+- Runs a final evaluation on the test split with the best validation hyperparameters.
+- Optionally logs study/trial parameters and metrics to MLflow (including externally hosted MLflow servers).
+
+Track on an external MLflow server:
+```shell
+python3 tools/tune_boosttrack_optuna.py \
+  --dataset hspot \
+  --benchmark HSPOT \
+  --gpu-id 0 \
+  --n-trials 30 \
+  --pruning-seqs 2 \
+  --mlflow-tracking-uri https://<your-mlflow-host> \
+  --mlflow-experiment BoostTrack-HSPOT \
+  --mlflow-run-name hspot_optuna_run_01 \
+  --mlflow-log-summary-json
+```
+Optional tags can be attached with repeated `--mlflow-tag key=value` arguments.
+For authenticated servers, set credentials via environment variables (for example `MLFLOW_TRACKING_USERNAME` / `MLFLOW_TRACKING_PASSWORD`) before running.
+
+Outputs:
+- Optuna study DB (default): `results/optuna/boosttrack_hota_tuning.db`
+- Summary JSON (default): `results/optuna/boosttrack_hota_tuning_summary.json`
 
 ## Running the experiments and evaluation
 ### Run BoostTrack

@@ -18,7 +18,12 @@ def parse_id_list(raw):
 
 def parse_args():
     parser = argparse.ArgumentParser("Convert HSPOT MOT-format data to COCO JSON.")
-    parser.add_argument("--data-path", type=str, default="data/HSPOT", help="Root path of HSPOT dataset.")
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        default="data/hspot",
+        help="Root path of HSPOT dataset.",
+    )
     parser.add_argument(
         "--splits",
         type=str,
@@ -85,7 +90,9 @@ def load_mot_annotations(path):
     return anns
 
 
-def should_keep_row(row, person_class_ids, ignored_class_ids, require_marked, min_visibility):
+def should_keep_row(
+    row, person_class_ids, ignored_class_ids, require_marked, min_visibility
+):
     mark = float(row[6]) if row.shape[0] > 6 else 1.0
     cls_id = int(row[7]) if row.shape[0] > 7 else 1
     vis = float(row[8]) if row.shape[0] > 8 else 1.0
@@ -101,7 +108,16 @@ def should_keep_row(row, person_class_ids, ignored_class_ids, require_marked, mi
     return True
 
 
-def convert_split(data_path, split, out_path, person_class_ids, ignored_class_ids, require_marked, min_visibility, keep_original_track_ids):
+def convert_split(
+    data_path,
+    split,
+    out_path,
+    person_class_ids,
+    ignored_class_ids,
+    require_marked,
+    min_visibility,
+    keep_original_track_ids,
+):
     split_root = os.path.join(data_path, split)
 
     out = {
@@ -182,7 +198,13 @@ def convert_split(data_path, split, out_path, person_class_ids, ignored_class_id
                 frame_id = int(row[0])
                 if frame_id not in frame_to_image_id:
                     continue
-                if not should_keep_row(row, person_class_ids, ignored_class_ids, require_marked, min_visibility):
+                if not should_keep_row(
+                    row,
+                    person_class_ids,
+                    ignored_class_ids,
+                    require_marked,
+                    min_visibility,
+                ):
                     continue
 
                 x, y, w, h = [float(v) for v in row[2:6]]
@@ -216,14 +238,20 @@ def convert_split(data_path, split, out_path, person_class_ids, ignored_class_id
         image_count += len(files)
         print(f"{split} | {seq}: {len(files)} images")
 
-    print(f"loaded {split} for {len(out['images'])} images and {len(out['annotations'])} samples")
+    print(
+        f"loaded {split} for {len(out['images'])} images and {len(out['annotations'])} samples"
+    )
     json.dump(out, open(out_path, "w"))
 
 
 def main():
     args = parse_args()
     data_path = args.data_path
-    out_dir = args.out_path if args.out_path is not None else os.path.join(data_path, "annotations")
+    out_dir = (
+        args.out_path
+        if args.out_path is not None
+        else os.path.join(data_path, "annotations")
+    )
     os.makedirs(out_dir, exist_ok=True)
 
     splits = [x.strip() for x in args.splits.split(",") if x.strip() != ""]

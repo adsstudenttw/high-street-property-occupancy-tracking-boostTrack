@@ -2,6 +2,10 @@ from typing import Union, Dict, Tuple
 
 
 def get_detector_path_and_im_size(args) -> Tuple[str, Tuple[int, int]]:
+    if args.ckpt is not None:
+        size = tuple(args.tsize) if hasattr(args, "tsize") else (800, 1440)
+        return args.ckpt, size
+
     if args.dataset == "mot17":
         if args.test_dataset:
             detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
@@ -16,6 +20,10 @@ def get_detector_path_and_im_size(args) -> Tuple[str, Tuple[int, int]]:
             # Just use the mot17 test model as the ablation model for 20
             detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
             size = (800, 1440)
+    elif args.dataset == "hspot":
+        detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
+        # Native HSPOT frame size (HxW): 960x1920.
+        size = (960, 1920)
     else:
         raise RuntimeError("Need to update paths for detector for extra datasets.")
     return detector_path, size
@@ -106,4 +114,3 @@ class BoostTrackPlusPlusSettings:
     @staticmethod
     def __class_getitem__(key: str):
         return BoostTrackPlusPlusSettings.values[key]
-

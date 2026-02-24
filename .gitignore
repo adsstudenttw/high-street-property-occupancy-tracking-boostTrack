@@ -1,0 +1,65 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python cache / tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual envs / local env managers
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Native / runtime artifacts
+*.so
+*.dylib
+*.dll
+*.pyd
+*.o
+
+# Logs / temp / profiling
+*.log
+*.tmp
+*.temp
+*.pid
+
+# Project runtime outputs
+cache/
+viz/
+mlruns/
+mlartifacts/
+results/trackers/
+
+# Model weights (downloaded locally)
+external/weights/
+
+# Local datasets (not versioned)
+data/MOT17/
+data/MOT20/
+data/HSPOT/
+data/dancetrack/
+data/DanceTrack/
+data/CityPersons/
+data/CrowdHuman/
+data/ETHZ/
+datasets/

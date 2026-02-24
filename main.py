@@ -36,15 +36,33 @@ def get_main_args():
         action="store_true",
         help="do not run post-processing.",
     )
+    parser.add_argument(
+        "--seqs",
+        type=str,
+        default=None,
+        help="Optional comma-separated sequence names to process (used for quick subset runs).",
+    )
+    parser.add_argument("--hp_det_thresh", type=float, default=None)
+    parser.add_argument("--hp_iou_threshold", type=float, default=None)
+    parser.add_argument("--hp_min_hits", type=int, default=None)
+    parser.add_argument("--hp_max_age", type=int, default=None)
+    parser.add_argument("--hp_lambda_iou", type=float, default=None)
+    parser.add_argument("--hp_lambda_mhd", type=float, default=None)
+    parser.add_argument("--hp_lambda_shape", type=float, default=None)
+    parser.add_argument("--hp_dlo_boost_coef", type=float, default=None)
+    parser.add_argument("--hp_use_dlo_boost", type=int, choices=[0, 1], default=None)
+    parser.add_argument("--hp_use_duo_boost", type=int, choices=[0, 1], default=None)
 
     args = parser.parse_args()
     if args.dataset == "mot17":
         args.result_folder = os.path.join(args.result_folder, "MOT17-val")
     elif args.dataset == "mot20":
         args.result_folder = os.path.join(args.result_folder, "MOT20-val")
+    elif args.dataset == "hspot":
+        args.result_folder = os.path.join(args.result_folder, "HSPOT-val")
 
     if args.test_dataset:
-        args.result_folder.replace("-val", "-test")
+        args.result_folder = args.result_folder.replace("-val", "-test")
     return args
 
 
@@ -62,9 +80,38 @@ def main():
     BoostTrackPlusPlusSettings.values['use_sb'] = not args.btpp_arg_no_sb
     BoostTrackPlusPlusSettings.values['use_vt'] = not args.btpp_arg_no_vt
 
+    # Optional runtime hyperparameter overrides (used by tuning scripts).
+    if args.hp_det_thresh is not None:
+        GeneralSettings.values['det_thresh'] = args.hp_det_thresh
+        if args.dataset in GeneralSettings.dataset_specific_settings:
+            GeneralSettings.dataset_specific_settings[args.dataset]['det_thresh'] = args.hp_det_thresh
+    if args.hp_iou_threshold is not None:
+        GeneralSettings.values['iou_threshold'] = args.hp_iou_threshold
+    if args.hp_min_hits is not None:
+        GeneralSettings.values['min_hits'] = args.hp_min_hits
+    if args.hp_max_age is not None:
+        GeneralSettings.values['max_age'] = args.hp_max_age
+    if args.hp_lambda_iou is not None:
+        BoostTrackSettings.values['lambda_iou'] = args.hp_lambda_iou
+    if args.hp_lambda_mhd is not None:
+        BoostTrackSettings.values['lambda_mhd'] = args.hp_lambda_mhd
+    if args.hp_lambda_shape is not None:
+        BoostTrackSettings.values['lambda_shape'] = args.hp_lambda_shape
+    if args.hp_dlo_boost_coef is not None:
+        BoostTrackSettings.values['dlo_boost_coef'] = args.hp_dlo_boost_coef
+        if args.dataset in BoostTrackSettings.dataset_specific_settings:
+            BoostTrackSettings.dataset_specific_settings[args.dataset]['dlo_boost_coef'] = args.hp_dlo_boost_coef
+    if args.hp_use_dlo_boost is not None:
+        BoostTrackSettings.values['use_dlo_boost'] = bool(args.hp_use_dlo_boost)
+    if args.hp_use_duo_boost is not None:
+        BoostTrackSettings.values['use_duo_boost'] = bool(args.hp_use_duo_boost)
+
     detector_path, size = get_detector_path_and_im_size(args)
     det = detector.Detector("yolox", detector_path, args.dataset)
     loader = dataset.get_mot_loader(args.dataset, args.test_dataset, size=size)
+    seq_filter = None
+    if args.seqs:
+        seq_filter = {seq.strip() for seq in args.seqs.split(",") if seq.strip()}
 
     tracker = None
     results = {}
@@ -75,6 +122,8 @@ def main():
         # Frame info
         frame_id = info[2].item()
         video_name = info[4][0].split("/")[0]
+        if seq_filter is not None and video_name not in seq_filter:
+            continue
 
         # Hacky way to skip SDP and DPM when testing
         if "FRCNN" not in video_name and args.dataset == "mot17":
@@ -113,7 +162,8 @@ def main():
     print(total_time)
     # Save detector results
     det.dump_cache()
-    tracker.dump_cache()
+    if tracker is not None:
+        tracker.dump_cache()
     # Save for all sequences
     folder = os.path.join(args.result_folder, args.exp_name, "data")
     os.makedirs(folder, exist_ok=True)
