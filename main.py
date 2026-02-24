@@ -59,7 +59,7 @@ def get_main_args():
     elif args.dataset == "mot20":
         args.result_folder = os.path.join(args.result_folder, "MOT20-val")
     elif args.dataset == "hspot":
-        args.result_folder = os.path.join(args.result_folder, "HSPOT-val")
+        args.result_folder = os.path.join(args.result_folder, "hspot-val")
 
     if args.test_dataset:
         args.result_folder = args.result_folder.replace("-val", "-test")

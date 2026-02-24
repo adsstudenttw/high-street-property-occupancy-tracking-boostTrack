@@ -73,8 +73,8 @@ data
 python3 data/tools/convert_mot17_to_coco.py
 python3 data/tools/convert_mot20_to_coco.py
 ```
-### Convert custom HSPOT dataset to COCO format
-If you have a custom HSPOT dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/hspot`:
+### Convert custom hspot dataset to COCO format
+If you have a custom hspot dataset in MOT-style layout (with `train`, `val`, and `test` splits), place it under `data/hspot`:
 ```
 data
 |——————hspot
@@ -109,7 +109,7 @@ Prerequisites:
 - Ground-truth folders and seqmaps must be available for TrackEval under `results/gt/` for both `*-val` and `*-test`.
 - Optuna must be installed (`optuna` is included in `boost-track-env.yml`).
 
-For HSPOT, you can prepare TrackEval ground-truth folders and seqmaps automatically with:
+For hspot, you can prepare TrackEval ground-truth folders and seqmaps automatically with:
 ```shell
 bash tools/setup_hspot_trackeval_gt.sh
 ```
@@ -139,12 +139,12 @@ Track on an external MLflow server:
 ```shell
 python3 tools/tune_boosttrack_optuna.py \
   --dataset hspot \
-  --benchmark HSPOT \
+  --benchmark hspot \
   --gpu-id 0 \
   --n-trials 30 \
   --pruning-seqs 2 \
   --mlflow-tracking-uri https://<your-mlflow-host> \
-  --mlflow-experiment BoostTrack-HSPOT \
+  --mlflow-experiment BoostTrack-hspot \
   --mlflow-run-name hspot_optuna_run_01 \
   --mlflow-log-summary-json
 ```

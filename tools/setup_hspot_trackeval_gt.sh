@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA_ROOT="data/HSPOT"
+DATA_ROOT="data/hspot"
 GT_ROOT="results/gt"
 ALLOW_MISSING_GT=0
 
@@ -11,16 +11,16 @@ Usage:
   bash tools/setup_hspot_trackeval_gt.sh [--data-root PATH] [--gt-root PATH] [--allow-missing-gt]
 
 Description:
-  Prepares TrackEval ground-truth layout for HSPOT:
-    - <gt-root>/HSPOT-val/<SEQ>/gt/gt.txt
-    - <gt-root>/HSPOT-val/<SEQ>/seqinfo.ini
-    - <gt-root>/HSPOT-test/<SEQ>/gt/gt.txt
-    - <gt-root>/HSPOT-test/<SEQ>/seqinfo.ini
-    - <gt-root>/seqmaps/HSPOT-val.txt
-    - <gt-root>/seqmaps/HSPOT-test.txt
+  Prepares TrackEval ground-truth layout for hspot:
+    - <gt-root>/hspot-val/<SEQ>/gt/gt.txt
+    - <gt-root>/hspot-val/<SEQ>/seqinfo.ini
+    - <gt-root>/hspot-test/<SEQ>/gt/gt.txt
+    - <gt-root>/hspot-test/<SEQ>/seqinfo.ini
+    - <gt-root>/seqmaps/hspot-val.txt
+    - <gt-root>/seqmaps/hspot-test.txt
 
 Options:
-  --data-root PATH       Source root (default: data/HSPOT)
+  --data-root PATH       Source root (default: data/hspot)
   --gt-root PATH         Destination TrackEval GT root (default: results/gt)
   --allow-missing-gt     Skip sequences missing gt/gt.txt instead of failing
   -h, --help             Show this help
@@ -56,8 +56,8 @@ done
 prepare_split() {
   local split="$1"
   local src_split="$DATA_ROOT/$split"
-  local dst_split="$GT_ROOT/HSPOT-$split"
-  local seqmap_file="$GT_ROOT/seqmaps/HSPOT-$split.txt"
+  local dst_split="$GT_ROOT/hspot-$split"
+  local seqmap_file="$GT_ROOT/seqmaps/hspot-$split.txt"
   local tmp_seqmap
   local copied_count=0
   local skipped_count=0
@@ -117,4 +117,4 @@ prepare_split "val"
 prepare_split "test"
 
 echo "Done. You can now run Optuna tuning with:"
-echo "  python3 tools/tune_boosttrack_optuna.py --dataset hspot --benchmark HSPOT --gpu-id 0"
+echo "  python3 tools/tune_boosttrack_optuna.py --dataset hspot --benchmark hspot --gpu-id 0"

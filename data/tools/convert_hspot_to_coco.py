@@ -17,12 +17,12 @@ def parse_id_list(raw):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser("Convert HSPOT MOT-format data to COCO JSON.")
+    parser = argparse.ArgumentParser("Convert hspot MOT-format data to COCO JSON.")
     parser.add_argument(
         "--data-path",
         type=str,
         default="data/hspot",
-        help="Root path of HSPOT dataset.",
+        help="Root path of hspot dataset.",
     )
     parser.add_argument(
         "--splits",

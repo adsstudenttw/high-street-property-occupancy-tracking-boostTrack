@@ -22,7 +22,7 @@ def get_detector_path_and_im_size(args) -> Tuple[str, Tuple[int, int]]:
             size = (800, 1440)
     elif args.dataset == "hspot":
         detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
-        # Native HSPOT frame size (HxW): 960x1920.
+        # Native hspot frame size (HxW): 960x1920.
         size = (960, 1920)
     else:
         raise RuntimeError("Need to update paths for detector for extra datasets.")

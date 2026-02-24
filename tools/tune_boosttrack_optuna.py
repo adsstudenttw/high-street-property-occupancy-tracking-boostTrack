@@ -100,7 +100,7 @@ def parse_args():
 
 def infer_benchmark(dataset):
     """Infer TrackEval benchmark name from a dataset identifier."""
-    mapping = {"mot17": "MOT17", "mot20": "MOT20", "hspot": "HSPOT"}
+    mapping = {"mot17": "MOT17", "mot20": "MOT20", "hspot": "hspot"}
     return mapping.get(dataset.lower(), dataset.upper())
 
 
