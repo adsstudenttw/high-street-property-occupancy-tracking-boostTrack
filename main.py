@@ -21,6 +21,12 @@ def get_main_args():
     parser.add_argument("--dataset", type=str, default="mot17")
     parser.add_argument("--result_folder", type=str, default="results/trackers/")
     parser.add_argument("--test_dataset", action="store_true")
+    parser.add_argument(
+        "--split",
+        type=str,
+        default=None,
+        help="Dataset split to process. For hspot supports train,val,test. Defaults to legacy behavior.",
+    )
     parser.add_argument("--exp_name", type=str, default="test")
     parser.add_argument("--no_reid", action="store_true", help="mark if visual embedding should NOT be used")
     parser.add_argument("--no_cmc", action="store_true", help="mark if camera motion compensation should NOT be used")
@@ -54,15 +60,21 @@ def get_main_args():
     parser.add_argument("--hp_use_duo_boost", type=int, choices=[0, 1], default=None)
 
     args = parser.parse_args()
-    if args.dataset == "mot17":
-        args.result_folder = os.path.join(args.result_folder, "MOT17-val")
-    elif args.dataset == "mot20":
-        args.result_folder = os.path.join(args.result_folder, "MOT20-val")
-    elif args.dataset == "hspot":
-        args.result_folder = os.path.join(args.result_folder, "hspot-val")
-
+    if args.split is None:
+        args.split = "test" if args.test_dataset else "val"
     if args.test_dataset:
-        args.result_folder = args.result_folder.replace("-val", "-test")
+        args.split = "test"
+    if args.split not in {"train", "val", "test"}:
+        raise RuntimeError(f"Unsupported split: {args.split}")
+
+    if args.dataset == "mot17":
+        args.result_folder = os.path.join(args.result_folder, f"MOT17-{args.split}")
+    elif args.dataset == "mot20":
+        args.result_folder = os.path.join(args.result_folder, f"MOT20-{args.split}")
+    elif args.dataset == "hspot":
+        args.result_folder = os.path.join(args.result_folder, f"hspot-{args.split}")
+
+    args.test_dataset = args.split == "test"
     return args
 
 
@@ -108,7 +120,7 @@ def main():
 
     detector_path, size = get_detector_path_and_im_size(args)
     det = detector.Detector("yolox", detector_path, args.dataset)
-    loader = dataset.get_mot_loader(args.dataset, args.test_dataset, size=size)
+    loader = dataset.get_mot_loader(args.dataset, args.split, size=size)
     seq_filter = None
     if args.seqs:
         seq_filter = {seq.strip() for seq in args.seqs.split(",") if seq.strip()}

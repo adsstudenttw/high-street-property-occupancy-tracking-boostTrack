@@ -12,10 +12,13 @@ Usage:
 
 Description:
   Prepares TrackEval ground-truth layout for hspot:
+    - <gt-root>/hspot-train/<SEQ>/gt/gt.txt
+    - <gt-root>/hspot-train/<SEQ>/seqinfo.ini
     - <gt-root>/hspot-val/<SEQ>/gt/gt.txt
     - <gt-root>/hspot-val/<SEQ>/seqinfo.ini
     - <gt-root>/hspot-test/<SEQ>/gt/gt.txt
     - <gt-root>/hspot-test/<SEQ>/seqinfo.ini
+    - <gt-root>/seqmaps/hspot-train.txt
     - <gt-root>/seqmaps/hspot-val.txt
     - <gt-root>/seqmaps/hspot-test.txt
 
@@ -113,6 +116,7 @@ prepare_split() {
   echo "  gt dir: $dst_split"
 }
 
+prepare_split "train"
 prepare_split "val"
 prepare_split "test"
 

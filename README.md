@@ -37,7 +37,7 @@ If your test split has no `gt/gt.txt`:
 ```shell
 make hspot-trackeval-setup-allow-missing-gt
 ```
-TrackEval is already included in this repository (`external/TrackEval`), so no separate TrackEval installation is required.
+This prepares TrackEval data for `train`, `val`, and `test`. TrackEval is already included in this repository (`external/TrackEval`), so no separate TrackEval installation is required.
 
 6. Configure remote MLflow (running on another VM):
 ```shell
@@ -61,7 +61,7 @@ make baseline-hspot-val \
   BASELINE_MLFLOW_RUN_NAME=hspot_baseline_val_run01
 ```
 
-8. Run hyperparameter tuning (validation HOTA, 1 GPU):
+8. Run hyperparameter tuning (train pruning, validation HOTA objective, 1 GPU):
 ```shell
 make tune-hspot MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI
 ```
@@ -72,6 +72,7 @@ make tune-hspot \
   TUNE_TRIALS=50 \
   TUNE_EXTRA_ARGS="--mlflow-experiment BoostTrack-hspot --mlflow-run-name surf_vm_run_01 --mlflow-log-summary-json"
 ```
+This workflow uses `train` for early pruning/subset evaluation, `val` for the Optuna objective, and `test` for the final best-parameter evaluation.
 If test GT is unavailable, add:
 ```shell
 TUNE_EXTRA_ARGS="--skip-final-test-eval"

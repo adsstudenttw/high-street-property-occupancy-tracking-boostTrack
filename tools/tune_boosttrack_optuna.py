@@ -16,6 +16,9 @@ from default_settings import BoostTrackSettings, GeneralSettings
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+TRAIN_SPLIT = "train"
+VAL_SPLIT = "val"
+TEST_SPLIT = "test"
 FLOAT_PARAM_KEYS = {
     "det_thresh",
     "iou_threshold",
@@ -53,7 +56,12 @@ def parse_args():
         "--pruning-seqs",
         type=int,
         default=2,
-        help="Evaluate this many validation sequences first and prune weak trials early. 0 disables subset stage.",
+        help="Evaluate this many train sequences first and prune weak trials early. 0 disables subset stage.",
+    )
+    parser.add_argument(
+        "--skip-train-pruning",
+        action="store_true",
+        help="Skip the train subset stage and evaluate trials directly on val.",
     )
     parser.add_argument("--pruner-startup-trials", type=int, default=5)
     parser.add_argument("--pruner-warmup-steps", type=int, default=0)
@@ -292,7 +300,16 @@ def load_seqmap_sequences(gt_folder, benchmark, split_name):
 
 def build_main_cmd(args, exp_name, split_name, params, seq_subset):
     """Build the command line to run `main.py` for one trial configuration."""
-    cmd = [sys.executable, "main.py", "--dataset", args.dataset, "--exp_name", exp_name]
+    cmd = [
+        sys.executable,
+        "main.py",
+        "--dataset",
+        args.dataset,
+        "--exp_name",
+        exp_name,
+        "--split",
+        split_name,
+    ]
     if split_name == "test":
         cmd.append("--test_dataset")
     if args.no_reid:
@@ -447,7 +464,11 @@ def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags, fixed_param
             "timeout_sec": args.timeout_sec if args.timeout_sec is not None else -1,
             "seed": args.seed,
             "gpu_id": args.gpu_id,
+            "train_split": TRAIN_SPLIT,
+            "eval_split": VAL_SPLIT,
+            "final_split": TEST_SPLIT,
             "pruning_seqs": args.pruning_seqs,
+            "skip_train_pruning": int(args.skip_train_pruning),
             "pruner_startup_trials": args.pruner_startup_trials,
             "pruner_warmup_steps": args.pruner_warmup_steps,
             "early_stop_patience": args.early_stop_patience,
@@ -468,16 +489,16 @@ def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags, fixed_param
     return True
 
 
-def determine_val_subset(args, mlflow):
-    """Select validation subset sequences used for pruning-stage evaluation."""
-    if args.pruning_seqs <= 0:
+def determine_train_subset(args, mlflow):
+    """Select train subset sequences used for pruning-stage evaluation."""
+    if args.skip_train_pruning or args.pruning_seqs <= 0:
         return None
-    all_val_sequences = load_seqmap_sequences(args.gt_folder, args.benchmark, "val")
-    val_subset = all_val_sequences[: min(args.pruning_seqs, len(all_val_sequences))]
-    print(f"Pruning subset (val): {val_subset}")
+    all_train_sequences = load_seqmap_sequences(args.gt_folder, args.benchmark, TRAIN_SPLIT)
+    train_subset = all_train_sequences[: min(args.pruning_seqs, len(all_train_sequences))]
+    print(f"Pruning subset ({TRAIN_SPLIT}): {train_subset}")
     if mlflow is not None:
-        mlflow.set_tag("val_pruning_subset", ",".join(val_subset))
-    return val_subset
+        mlflow.set_tag("train_pruning_subset", ",".join(train_subset))
+    return train_subset
 
 
 def create_study(args, storage):
@@ -549,8 +570,8 @@ def suggest_trial_params(trial, args, fixed_params):
     return params
 
 
-def run_trial(args, env, mlflow, val_subset, trial, params):
-    """Execute one Optuna trial, including pruning stage and full validation stage."""
+def run_trial(args, env, mlflow, train_subset, trial, params):
+    """Execute one Optuna trial, including train pruning stage and full validation stage."""
     trial_run_started = False
     trial_run_status = "FAILED"
     trial_prefix = f"{args.study_name}_trial_{trial.number:04d}"
@@ -562,13 +583,13 @@ def run_trial(args, env, mlflow, val_subset, trial, params):
         mlflow.log_params(params)
 
     try:
-        if val_subset:
+        if train_subset:
             prune_exp = f"{trial_prefix}_prune"
-            prune_hota = evaluate_run(args, env, prune_exp, "val", val_subset, params)
+            prune_hota = evaluate_run(args, env, prune_exp, TRAIN_SPLIT, train_subset, params)
             trial.report(prune_hota, step=0)
-            trial.set_user_attr("subset_val_hota", prune_hota)
+            trial.set_user_attr("subset_train_hota", prune_hota)
             if mlflow is not None:
-                mlflow.log_metric("subset_val_hota", prune_hota, step=0)
+                mlflow.log_metric("subset_train_hota", prune_hota, step=0)
             if trial.should_prune():
                 if mlflow is not None:
                     mlflow.set_tag("trial_state", "PRUNED")
@@ -576,7 +597,7 @@ def run_trial(args, env, mlflow, val_subset, trial, params):
                 raise optuna.TrialPruned(f"Pruned after subset HOTA={prune_hota:.4f}")
 
         full_exp = f"{trial_prefix}_full"
-        val_hota = evaluate_run(args, env, full_exp, "val", None, params)
+        val_hota = evaluate_run(args, env, full_exp, VAL_SPLIT, None, params)
         trial.report(val_hota, step=1)
         trial.set_user_attr("val_exp_name", full_exp)
         if mlflow is not None:
@@ -600,12 +621,12 @@ def run_trial(args, env, mlflow, val_subset, trial, params):
             mlflow.end_run(status=trial_run_status)
 
 
-def build_objective(args, env, mlflow, val_subset, fixed_params):
+def build_objective(args, env, mlflow, train_subset, fixed_params):
     """Build the Optuna objective closure bound to runtime context."""
     def objective(trial):
         """Evaluate a sampled trial and return validation HOTA."""
         params = suggest_trial_params(trial, args, fixed_params)
-        return run_trial(args, env, mlflow, val_subset, trial, params)
+        return run_trial(args, env, mlflow, train_subset, trial, params)
 
     return objective
 
@@ -628,7 +649,7 @@ def evaluate_best_on_test(args, env, best_params, mlflow):
     if args.skip_final_test_eval:
         return None, None
     final_test_exp = f"{args.study_name}_best_test"
-    test_hota = evaluate_run(args, env, final_test_exp, "test", None, best_params)
+    test_hota = evaluate_run(args, env, final_test_exp, TEST_SPLIT, None, best_params)
     print(f"Final test HOTA: {test_hota:.4f}")
     if mlflow is not None:
         mlflow.log_metric("test_hota", test_hota)
@@ -699,12 +720,12 @@ def main():
         parent_run_started = start_parent_mlflow_run(
             mlflow, args, tracking_uri, mlflow_tags, fixed_params
         )
-        val_subset = determine_val_subset(args, mlflow)
+        train_subset = determine_train_subset(args, mlflow)
         study = create_study(args, storage)
-        objective = build_objective(args, env, mlflow, val_subset, fixed_params)
+        objective = build_objective(args, env, mlflow, train_subset, fixed_params)
         run_optimization(args, study, objective)
         best_trial = get_best_trial(study)
-        best_params = dict(best_trial.params)
+        best_params = dict(best_trial.params) 
         final_test_exp, test_hota = evaluate_best_on_test(args, env, best_params, mlflow)
         summary = build_summary(
             args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri, fixed_params

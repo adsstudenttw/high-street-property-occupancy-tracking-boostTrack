@@ -38,7 +38,7 @@ help:
 	@echo "  hspot-trackeval-setup Prepare TrackEval GT/seqmaps for hspot"
 	@echo "  hspot-trackeval-setup-allow-missing-gt  Same as above, but skips missing test GT files"
 	@echo "  baseline-hspot-val    Run default-parameter baseline on hspot val (logs to MLflow if URI set)"
-	@echo "  tune-hspot            Run Optuna tuning on hspot (logs to remote MLflow if URI set)"
+	@echo "  tune-hspot            Run Optuna tuning on hspot (train pruning, val objective, test final eval)"
 	@echo ""
 	@echo "Key vars:"
 	@echo "  IMAGE=$(IMAGE)"
@@ -82,6 +82,7 @@ baseline-hspot-val:
 		--study-db $(BASELINE_STUDY_DB) \
 		--n-trials 1 \
 		--pruning-seqs 0 \
+		--skip-train-pruning \
 		--early-stop-patience 0 \
 		--skip-final-test-eval \
 		--fixed-defaults \

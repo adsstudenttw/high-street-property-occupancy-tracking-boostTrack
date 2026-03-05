@@ -8,11 +8,12 @@ from pycocotools.coco import COCO
 from torchvision import transforms
 from yolox.data import ValTransform
 
-def get_mot_loader(dataset, test, data_dir="data", workers=4, size=(800, 1440)):
+
+def get_mot_loader(dataset, split, data_dir="data", workers=4, size=(800, 1440)):
     # Different dataset paths
     if dataset == "mot17":
         direc = "MOT17"
-        if test:
+        if split == "test":
             name = "test"
             annotation = "test.json"
         else:
@@ -20,7 +21,7 @@ def get_mot_loader(dataset, test, data_dir="data", workers=4, size=(800, 1440)):
             annotation = "val_half.json"
     elif dataset == "mot20":
         direc = "MOT20"
-        if test:
+        if split == "test":
             name = "test"
             annotation = "test.json"
         else:
@@ -28,12 +29,10 @@ def get_mot_loader(dataset, test, data_dir="data", workers=4, size=(800, 1440)):
             annotation = "val_half.json"
     elif dataset == "hspot":
         direc = "hspot"
-        if test:
-            name = "test"
-            annotation = "test.json"
-        else:
-            name = "val"
-            annotation = "val.json"
+        if split not in {"train", "val", "test"}:
+            raise RuntimeError(f"Unsupported hspot split: {split}")
+        name = split
+        annotation = f"{split}.json"
     else:
         raise RuntimeError("Specify path here.")
 
