@@ -11,10 +11,14 @@ MLFLOW_TRACKING_URI ?=
 # hspot defaults
 hspot_data_root ?= data/hspot
 hspot_gt_root ?= results/gt
-TUNE_TRIALS ?= 30
+TUNE_TRIALS ?= 64
 TUNE_GPU_ID ?= 0
 TUNE_PRUNING_SEQS ?= 2
-TUNE_EXTRA_ARGS ?=
+TUNE_TIMEOUT_SEC ?= 360000
+TUNE_PRUNER_STARTUP_TRIALS ?= 5
+TUNE_EARLY_STOP_PATIENCE ?= 10
+TUNE_EARLY_STOP_MIN_DELTA ?= 0.01
+TUNE_EXTRA_ARGS ?= --mlflow-log-summary-json
 BASELINE_STUDY_NAME ?= hspot_baseline_val
 BASELINE_STUDY_DB ?= results/optuna/hspot_baseline_val.db
 BASELINE_MLFLOW_EXPERIMENT ?= BoostTrack-Baselines
@@ -44,6 +48,8 @@ help:
 	@echo "  IMAGE=$(IMAGE)"
 	@echo "  MLFLOW_TRACKING_URI=$(MLFLOW_TRACKING_URI)"
 	@echo "  hspot_data_root=$(hspot_data_root)"
+	@echo "  TUNE_TRIALS=$(TUNE_TRIALS)"
+	@echo "  TUNE_TIMEOUT_SEC=$(TUNE_TIMEOUT_SEC)"
 
 vm-bootstrap:
 	sudo bash scripts/setup_ubuntu2204_cuda12_docker.sh
@@ -100,5 +106,9 @@ tune-hspot:
 		--gpu-id $(TUNE_GPU_ID) \
 		--n-trials $(TUNE_TRIALS) \
 		--pruning-seqs $(TUNE_PRUNING_SEQS) \
+		--timeout-sec $(TUNE_TIMEOUT_SEC) \
+		--pruner-startup-trials $(TUNE_PRUNER_STARTUP_TRIALS) \
+		--early-stop-patience $(TUNE_EARLY_STOP_PATIENCE) \
+		--early-stop-min-delta $(TUNE_EARLY_STOP_MIN_DELTA) \
 		$${MLFLOW_TRACKING_URI:+--mlflow-tracking-uri $$MLFLOW_TRACKING_URI} \
 		$(TUNE_EXTRA_ARGS)

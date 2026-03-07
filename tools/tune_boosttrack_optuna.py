@@ -37,7 +37,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         "Optuna-based BoostTrack hyperparameter tuning (validation HOTA) + final test evaluation."
     )
-    parser.add_argument("--dataset", type=str, default="mot17", help="Dataset name passed to main.py.")
+    parser.add_argument(
+        "--dataset", type=str, default="hspot", help="Dataset name passed to main.py."
+    )
     parser.add_argument(
         "--benchmark",
         type=str,
@@ -45,7 +47,9 @@ def parse_args():
         help="TrackEval benchmark name (default: inferred from --dataset).",
     )
     parser.add_argument("--study-name", type=str, default="boosttrack_hota_tuning")
-    parser.add_argument("--study-db", type=str, default="results/optuna/boosttrack_hota_tuning.db")
+    parser.add_argument(
+        "--study-db", type=str, default="results/optuna/boosttrack_hota_tuning.db"
+    )
     parser.add_argument("--n-trials", type=int, default=30)
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -83,18 +87,18 @@ def parse_args():
     parser.add_argument("--btpp-arg-no-vt", action="store_true")
 
     # Search space.
-    parser.add_argument("--det-thresh-min", type=float, default=0.2)
-    parser.add_argument("--det-thresh-max", type=float, default=0.8)
-    parser.add_argument("--iou-thresh-min", type=float, default=0.1)
-    parser.add_argument("--iou-thresh-max", type=float, default=0.7)
+    parser.add_argument("--det-thresh-min", type=float, default=0.35)
+    parser.add_argument("--det-thresh-max", type=float, default=0.75)
+    parser.add_argument("--iou-thresh-min", type=float, default=0.15)
+    parser.add_argument("--iou-thresh-max", type=float, default=0.50)
     parser.add_argument("--min-hits-min", type=int, default=1)
-    parser.add_argument("--min-hits-max", type=int, default=7)
-    parser.add_argument("--max-age-min", type=int, default=15)
-    parser.add_argument("--max-age-max", type=int, default=120)
+    parser.add_argument("--min-hits-max", type=int, default=5)
+    parser.add_argument("--max-age-min", type=int, default=20)
+    parser.add_argument("--max-age-max", type=int, default=60)
     parser.add_argument("--lambda-min", type=float, default=0.0)
-    parser.add_argument("--lambda-max", type=float, default=1.5)
-    parser.add_argument("--dlo-boost-min", type=float, default=0.3)
-    parser.add_argument("--dlo-boost-max", type=float, default=0.9)
+    parser.add_argument("--lambda-max", type=float, default=1.0)
+    parser.add_argument("--dlo-boost-min", type=float, default=0.40)
+    parser.add_argument("--dlo-boost-max", type=float, default=0.80)
 
     parser.add_argument("--skip-final-test-eval", action="store_true")
     parser.add_argument("--output-json", type=str, default=None)
@@ -146,9 +150,9 @@ def default_tuning_params(dataset):
     det_thresh = GeneralSettings.dataset_specific_settings.get(dataset_key, {}).get(
         "det_thresh", GeneralSettings.values["det_thresh"]
     )
-    dlo_boost_coef = BoostTrackSettings.dataset_specific_settings.get(dataset_key, {}).get(
-        "dlo_boost_coef", BoostTrackSettings.values["dlo_boost_coef"]
-    )
+    dlo_boost_coef = BoostTrackSettings.dataset_specific_settings.get(
+        dataset_key, {}
+    ).get("dlo_boost_coef", BoostTrackSettings.values["dlo_boost_coef"])
     return {
         "det_thresh": float(det_thresh),
         "iou_threshold": float(GeneralSettings.values["iou_threshold"]),
@@ -446,15 +450,16 @@ def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags, fixed_param
         return False
     parent_run_name = args.mlflow_run_name or f"{args.study_name}_{args.dataset}"
     mlflow.start_run(run_name=parent_run_name)
-    mlflow.set_tags(
-        {
-            "dataset": args.dataset,
-            "benchmark": args.benchmark,
-            "optimizer": "optuna_tpe",
-            "pruner": "median",
-            "objective": "HOTA",
-        }
-    )
+    parent_tags = {
+        "dataset": args.dataset,
+        "benchmark": args.benchmark,
+        "optimizer": "optuna_tpe",
+        "pruner": "median",
+        "objective": "HOTA",
+    }
+    if is_baseline_mode(args):
+        parent_tags["stage"] = "baseline_eval"
+    mlflow.set_tags(parent_tags)
     if mlflow_tags:
         mlflow.set_tags(mlflow_tags)
     mlflow.log_params(
@@ -489,12 +494,26 @@ def start_parent_mlflow_run(mlflow, args, tracking_uri, mlflow_tags, fixed_param
     return True
 
 
+def is_baseline_mode(args):
+    """Return whether the run configuration matches baseline-establishment mode."""
+    return (
+        args.fixed_defaults
+        and args.n_trials == 1
+        and args.skip_train_pruning
+        and args.skip_final_test_eval
+    )
+
+
 def determine_train_subset(args, mlflow):
     """Select train subset sequences used for pruning-stage evaluation."""
     if args.skip_train_pruning or args.pruning_seqs <= 0:
         return None
-    all_train_sequences = load_seqmap_sequences(args.gt_folder, args.benchmark, TRAIN_SPLIT)
-    train_subset = all_train_sequences[: min(args.pruning_seqs, len(all_train_sequences))]
+    all_train_sequences = load_seqmap_sequences(
+        args.gt_folder, args.benchmark, TRAIN_SPLIT
+    )
+    train_subset = all_train_sequences[
+        : min(args.pruning_seqs, len(all_train_sequences))
+    ]
     print(f"Pruning subset ({TRAIN_SPLIT}): {train_subset}")
     if mlflow is not None:
         mlflow.set_tag("train_pruning_subset", ",".join(train_subset))
@@ -503,9 +522,12 @@ def determine_train_subset(args, mlflow):
 
 def create_study(args, storage):
     """Create or load an Optuna study configured with TPE sampler and median pruner."""
-    sampler = optuna.samplers.TPESampler(seed=args.seed, n_startup_trials=args.pruner_startup_trials)
+    sampler = optuna.samplers.TPESampler(
+        seed=args.seed, n_startup_trials=args.pruner_startup_trials
+    )
     pruner = optuna.pruners.MedianPruner(
-        n_startup_trials=args.pruner_startup_trials, n_warmup_steps=args.pruner_warmup_steps
+        n_startup_trials=args.pruner_startup_trials,
+        n_warmup_steps=args.pruner_warmup_steps,
     )
     return optuna.create_study(
         direction="maximize",
@@ -522,107 +544,237 @@ def suggest_trial_params(trial, args, fixed_params):
     params = {
         "det_thresh": trial.suggest_float(
             "det_thresh",
-            float(fixed_params["det_thresh"]) if "det_thresh" in fixed_params else args.det_thresh_min,
-            float(fixed_params["det_thresh"]) if "det_thresh" in fixed_params else args.det_thresh_max,
+            (
+                float(fixed_params["det_thresh"])
+                if "det_thresh" in fixed_params
+                else args.det_thresh_min
+            ),
+            (
+                float(fixed_params["det_thresh"])
+                if "det_thresh" in fixed_params
+                else args.det_thresh_max
+            ),
         ),
         "iou_threshold": trial.suggest_float(
             "iou_threshold",
-            float(fixed_params["iou_threshold"]) if "iou_threshold" in fixed_params else args.iou_thresh_min,
-            float(fixed_params["iou_threshold"]) if "iou_threshold" in fixed_params else args.iou_thresh_max,
+            (
+                float(fixed_params["iou_threshold"])
+                if "iou_threshold" in fixed_params
+                else args.iou_thresh_min
+            ),
+            (
+                float(fixed_params["iou_threshold"])
+                if "iou_threshold" in fixed_params
+                else args.iou_thresh_max
+            ),
         ),
         "min_hits": trial.suggest_int(
             "min_hits",
-            int(fixed_params["min_hits"]) if "min_hits" in fixed_params else args.min_hits_min,
-            int(fixed_params["min_hits"]) if "min_hits" in fixed_params else args.min_hits_max,
+            (
+                int(fixed_params["min_hits"])
+                if "min_hits" in fixed_params
+                else args.min_hits_min
+            ),
+            (
+                int(fixed_params["min_hits"])
+                if "min_hits" in fixed_params
+                else args.min_hits_max
+            ),
         ),
         "max_age": trial.suggest_int(
             "max_age",
-            int(fixed_params["max_age"]) if "max_age" in fixed_params else args.max_age_min,
-            int(fixed_params["max_age"]) if "max_age" in fixed_params else args.max_age_max,
+            (
+                int(fixed_params["max_age"])
+                if "max_age" in fixed_params
+                else args.max_age_min
+            ),
+            (
+                int(fixed_params["max_age"])
+                if "max_age" in fixed_params
+                else args.max_age_max
+            ),
         ),
         "lambda_iou": trial.suggest_float(
             "lambda_iou",
-            float(fixed_params["lambda_iou"]) if "lambda_iou" in fixed_params else args.lambda_min,
-            float(fixed_params["lambda_iou"]) if "lambda_iou" in fixed_params else args.lambda_max,
+            (
+                float(fixed_params["lambda_iou"])
+                if "lambda_iou" in fixed_params
+                else args.lambda_min
+            ),
+            (
+                float(fixed_params["lambda_iou"])
+                if "lambda_iou" in fixed_params
+                else args.lambda_max
+            ),
         ),
         "lambda_mhd": trial.suggest_float(
             "lambda_mhd",
-            float(fixed_params["lambda_mhd"]) if "lambda_mhd" in fixed_params else args.lambda_min,
-            float(fixed_params["lambda_mhd"]) if "lambda_mhd" in fixed_params else args.lambda_max,
+            (
+                float(fixed_params["lambda_mhd"])
+                if "lambda_mhd" in fixed_params
+                else args.lambda_min
+            ),
+            (
+                float(fixed_params["lambda_mhd"])
+                if "lambda_mhd" in fixed_params
+                else args.lambda_max
+            ),
         ),
         "lambda_shape": trial.suggest_float(
             "lambda_shape",
-            float(fixed_params["lambda_shape"]) if "lambda_shape" in fixed_params else args.lambda_min,
-            float(fixed_params["lambda_shape"]) if "lambda_shape" in fixed_params else args.lambda_max,
+            (
+                float(fixed_params["lambda_shape"])
+                if "lambda_shape" in fixed_params
+                else args.lambda_min
+            ),
+            (
+                float(fixed_params["lambda_shape"])
+                if "lambda_shape" in fixed_params
+                else args.lambda_max
+            ),
         ),
         "dlo_boost_coef": trial.suggest_float(
             "dlo_boost_coef",
-            float(fixed_params["dlo_boost_coef"]) if "dlo_boost_coef" in fixed_params else args.dlo_boost_min,
-            float(fixed_params["dlo_boost_coef"]) if "dlo_boost_coef" in fixed_params else args.dlo_boost_max,
+            (
+                float(fixed_params["dlo_boost_coef"])
+                if "dlo_boost_coef" in fixed_params
+                else args.dlo_boost_min
+            ),
+            (
+                float(fixed_params["dlo_boost_coef"])
+                if "dlo_boost_coef" in fixed_params
+                else args.dlo_boost_max
+            ),
         ),
         "use_dlo_boost": trial.suggest_categorical(
-            "use_dlo_boost", [int(fixed_params["use_dlo_boost"])] if "use_dlo_boost" in fixed_params else [0, 1]
+            "use_dlo_boost",
+            (
+                [int(fixed_params["use_dlo_boost"])]
+                if "use_dlo_boost" in fixed_params
+                else [0, 1]
+            ),
         ),
         "use_duo_boost": trial.suggest_categorical(
-            "use_duo_boost", [int(fixed_params["use_duo_boost"])] if "use_duo_boost" in fixed_params else [0, 1]
+            "use_duo_boost",
+            (
+                [int(fixed_params["use_duo_boost"])]
+                if "use_duo_boost" in fixed_params
+                else [0, 1]
+            ),
         ),
     }
     return params
 
 
-def run_trial(args, env, mlflow, train_subset, trial, params):
-    """Execute one Optuna trial, including train pruning stage and full validation stage."""
-    trial_run_started = False
-    trial_run_status = "FAILED"
-    trial_prefix = f"{args.study_name}_trial_{trial.number:04d}"
+def start_mlflow_stage_run(mlflow, run_name, tags, params):
+    """Start a nested MLflow run for one stage and attach tags/params."""
+    if mlflow is None:
+        return False
+    mlflow.start_run(run_name=run_name, nested=True)
+    mlflow.set_tags(tags)
+    mlflow.log_params(params)
+    return True
 
-    if mlflow is not None:
-        mlflow.start_run(run_name=f"trial_{trial.number:04d}", nested=True)
-        trial_run_started = True
-        mlflow.set_tags({"optuna_trial_number": trial.number})
-        mlflow.log_params(params)
 
+def run_pruning_stage(args, env, mlflow, trial, params, trial_prefix, train_subset):
+    """Run train-subset pruning stage and raise TrialPruned when requested by Optuna."""
+    prune_exp = f"{trial_prefix}_prune"
+    prune_run_started = start_mlflow_stage_run(
+        mlflow,
+        run_name=f"trial_{trial.number:04d}_{TRAIN_SPLIT}",
+        tags={
+            "stage": "hpo_train",
+            "hpo_study_name": args.study_name,
+            "hpo_trial_number": str(trial.number),
+            "hpo_stage_iter": "0",
+        },
+        params=params,
+    )
+    prune_run_status = "FAILED"
     try:
-        if train_subset:
-            prune_exp = f"{trial_prefix}_prune"
-            prune_hota = evaluate_run(args, env, prune_exp, TRAIN_SPLIT, train_subset, params)
-            trial.report(prune_hota, step=0)
-            trial.set_user_attr("subset_train_hota", prune_hota)
+        prune_hota = evaluate_run(args, env, prune_exp, TRAIN_SPLIT, train_subset, params)
+        trial.report(prune_hota, step=0)
+        trial.set_user_attr("subset_train_hota", prune_hota)
+        if mlflow is not None:
+            mlflow.log_metric("subset_train_hota", prune_hota, step=0)
+        if trial.should_prune():
             if mlflow is not None:
-                mlflow.log_metric("subset_train_hota", prune_hota, step=0)
-            if trial.should_prune():
-                if mlflow is not None:
-                    mlflow.set_tag("trial_state", "PRUNED")
-                trial_run_status = "KILLED"
-                raise optuna.TrialPruned(f"Pruned after subset HOTA={prune_hota:.4f}")
+                mlflow.set_tag("trial_state", "PRUNED")
+            prune_run_status = "KILLED"
+            raise optuna.TrialPruned(f"Pruned after subset HOTA={prune_hota:.4f}")
+        if mlflow is not None:
+            mlflow.set_tag("trial_state", "COMPLETE")
+        prune_run_status = "FINISHED"
+    except optuna.TrialPruned:
+        if mlflow is not None:
+            mlflow.set_tag("trial_state", "PRUNED")
+        prune_run_status = "KILLED"
+        raise
+    except Exception:
+        if mlflow is not None:
+            mlflow.set_tag("trial_state", "FAILED")
+        prune_run_status = "FAILED"
+        raise
+    finally:
+        if mlflow is not None and prune_run_started:
+            mlflow.end_run(status=prune_run_status)
 
-        full_exp = f"{trial_prefix}_full"
+
+def run_validation_stage(args, env, mlflow, trial, params, trial_prefix, baseline_mode):
+    """Run full validation stage and return (validation_hota, experiment_name)."""
+    full_exp = f"{trial_prefix}_full"
+    eval_tags = {"stage": "baseline_eval" if baseline_mode else "hpo_eval"}
+    if not baseline_mode:
+        eval_tags.update(
+            {
+                "hpo_study_name": args.study_name,
+                "hpo_trial_number": str(trial.number),
+                "hpo_stage_iter": "1",
+            }
+        )
+    eval_run_started = start_mlflow_stage_run(
+        mlflow,
+        run_name=f"trial_{trial.number:04d}_{VAL_SPLIT}",
+        tags=eval_tags,
+        params=params,
+    )
+    eval_run_status = "FAILED"
+    try:
         val_hota = evaluate_run(args, env, full_exp, VAL_SPLIT, None, params)
         trial.report(val_hota, step=1)
         trial.set_user_attr("val_exp_name", full_exp)
         if mlflow is not None:
             mlflow.log_metric("val_hota", val_hota, step=1)
             mlflow.set_tags({"trial_state": "COMPLETE", "val_exp_name": full_exp})
-        trial_run_status = "FINISHED"
-        return val_hota
-    except optuna.TrialPruned:
-        if mlflow is not None:
-            mlflow.set_tag("trial_state", "PRUNED")
-        if trial_run_status != "KILLED":
-            trial_run_status = "KILLED"
-        raise
+        eval_run_status = "FINISHED"
+        return val_hota, full_exp
     except Exception:
         if mlflow is not None:
             mlflow.set_tag("trial_state", "FAILED")
-        trial_run_status = "FAILED"
+        eval_run_status = "FAILED"
         raise
     finally:
-        if mlflow is not None and trial_run_started:
-            mlflow.end_run(status=trial_run_status)
+        if mlflow is not None and eval_run_started:
+            mlflow.end_run(status=eval_run_status)
+
+
+def run_trial(args, env, mlflow, train_subset, trial, params):
+    """Execute one Optuna trial, including optional train pruning and full validation."""
+    baseline_mode = is_baseline_mode(args)
+    trial_prefix = f"{args.study_name}_trial_{trial.number:04d}"
+
+    if train_subset:
+        run_pruning_stage(args, env, mlflow, trial, params, trial_prefix, train_subset)
+
+    val_hota, _ = run_validation_stage(
+        args, env, mlflow, trial, params, trial_prefix, baseline_mode
+    )
+    return val_hota
 
 
 def build_objective(args, env, mlflow, train_subset, fixed_params):
     """Build the Optuna objective closure bound to runtime context."""
+
     def objective(trial):
         """Evaluate a sampled trial and return validation HOTA."""
         params = suggest_trial_params(trial, args, fixed_params)
@@ -633,8 +785,12 @@ def build_objective(args, env, mlflow, train_subset, fixed_params):
 
 def run_optimization(args, study, objective):
     """Run Optuna optimization with early-stopping callback support."""
-    callbacks = [EarlyStoppingCallback(args.early_stop_patience, args.early_stop_min_delta)]
-    study.optimize(objective, n_trials=args.n_trials, timeout=args.timeout_sec, callbacks=callbacks)
+    callbacks = [
+        EarlyStoppingCallback(args.early_stop_patience, args.early_stop_min_delta)
+    ]
+    study.optimize(
+        objective, n_trials=args.n_trials, timeout=args.timeout_sec, callbacks=callbacks
+    )
 
 
 def get_best_trial(study):
@@ -649,15 +805,40 @@ def evaluate_best_on_test(args, env, best_params, mlflow):
     if args.skip_final_test_eval:
         return None, None
     final_test_exp = f"{args.study_name}_best_test"
-    test_hota = evaluate_run(args, env, final_test_exp, TEST_SPLIT, None, best_params)
-    print(f"Final test HOTA: {test_hota:.4f}")
+    final_test_run_started = False
+    final_test_run_status = "FAILED"
     if mlflow is not None:
-        mlflow.log_metric("test_hota", test_hota)
-    return final_test_exp, test_hota
+        mlflow.start_run(run_name="best_test_eval", nested=True)
+        final_test_run_started = True
+        mlflow.set_tags({"stage": "final_eval_best_hpo"})
+        mlflow.log_params(best_params)
+    try:
+        test_hota = evaluate_run(args, env, final_test_exp, TEST_SPLIT, None, best_params)
+        print(f"Final test HOTA: {test_hota:.4f}")
+        if mlflow is not None:
+            mlflow.log_metric("test_hota", test_hota)
+            final_test_run_status = "FINISHED"
+        return final_test_exp, test_hota
+    except Exception:
+        if mlflow is not None:
+            mlflow.set_tag("trial_state", "FAILED")
+        final_test_run_status = "FAILED"
+        raise
+    finally:
+        if mlflow is not None and final_test_run_started:
+            mlflow.end_run(status=final_test_run_status)
 
 
 def build_summary(
-    args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri, fixed_params
+    args,
+    study,
+    best_trial,
+    best_params,
+    final_test_exp,
+    test_hota,
+    db_path,
+    tracking_uri,
+    fixed_params,
 ):
     """Assemble the final summary payload for JSON persistence and logging."""
     return {
@@ -666,8 +847,12 @@ def build_summary(
         "benchmark": args.benchmark,
         "gpu_id": args.gpu_id,
         "n_trials_requested": args.n_trials,
-        "n_trials_completed": len([t for t in study.trials if t.state == TrialState.COMPLETE]),
-        "n_trials_pruned": len([t for t in study.trials if t.state == TrialState.PRUNED]),
+        "n_trials_completed": len(
+            [t for t in study.trials if t.state == TrialState.COMPLETE]
+        ),
+        "n_trials_pruned": len(
+            [t for t in study.trials if t.state == TrialState.PRUNED]
+        ),
         "best_trial_number": best_trial.number,
         "best_val_hota": best_trial.value,
         "best_params": best_params,
@@ -725,10 +910,20 @@ def main():
         objective = build_objective(args, env, mlflow, train_subset, fixed_params)
         run_optimization(args, study, objective)
         best_trial = get_best_trial(study)
-        best_params = dict(best_trial.params) 
-        final_test_exp, test_hota = evaluate_best_on_test(args, env, best_params, mlflow)
+        best_params = dict(best_trial.params)
+        final_test_exp, test_hota = evaluate_best_on_test(
+            args, env, best_params, mlflow
+        )
         summary = build_summary(
-            args, study, best_trial, best_params, final_test_exp, test_hota, db_path, tracking_uri, fixed_params
+            args,
+            study,
+            best_trial,
+            best_params,
+            final_test_exp,
+            test_hota,
+            db_path,
+            tracking_uri,
+            fixed_params,
         )
         save_summary(summary, output_json)
         log_parent_mlflow_results(mlflow, args, summary, output_json, db_path)
