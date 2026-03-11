@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
     curl \
+    build-essential \
+    ninja-build \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
