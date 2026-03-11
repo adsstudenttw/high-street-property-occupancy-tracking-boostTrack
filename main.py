@@ -19,6 +19,12 @@ https://github.com/GerardMaggiolino/Deep-OC-SORT
 def get_main_args():
     parser = make_parser()
     parser.add_argument("--dataset", type=str, default="mot17")
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=os.getenv("BOOSTTRACK_DATA_DIR", "data"),
+        help="Dataset root containing MOT17/MOT20/hspot folders.",
+    )
     parser.add_argument("--result_folder", type=str, default="results/trackers/")
     parser.add_argument("--test_dataset", action="store_true")
     parser.add_argument(
@@ -120,7 +126,9 @@ def main():
 
     detector_path, size = get_detector_path_and_im_size(args)
     det = detector.Detector("yolox", detector_path, args.dataset)
-    loader = dataset.get_mot_loader(args.dataset, args.split, size=size)
+    loader = dataset.get_mot_loader(
+        args.dataset, args.split, data_dir=args.data_dir, size=size
+    )
     seq_filter = None
     if args.seqs:
         seq_filter = {seq.strip() for seq in args.seqs.split(",") if seq.strip()}

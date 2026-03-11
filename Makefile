@@ -4,13 +4,27 @@ IMAGE ?= boosttrack:cuda12-uv
 CONTAINER_NAME ?= boosttrack-dev
 GPU ?= all
 WORKDIR ?= /workspace
+SURF_VOL ?= /data/boosttrack_storage
+DOCKER_STORAGE_ROOT ?= $(SURF_VOL)/runtime
+
+# Host-side paths (set these to SURF volume locations).
+HOST_DATA_ROOT ?= $(SURF_VOL)/data
+HOST_RESULTS_ROOT ?= $(SURF_VOL)/results
+HOST_WEIGHTS_ROOT ?= $(SURF_VOL)/weights
+
+# Container-visible paths.
+data_root ?= $(WORKDIR)/data
+results_root ?= $(WORKDIR)/results
+weights_root ?= $(WORKDIR)/external/weights
 
 # Remote MLflow URI (already running on a separate VM)
 MLFLOW_TRACKING_URI ?=
 
 # hspot defaults
-hspot_data_root ?= data/hspot
-hspot_gt_root ?= results/gt
+hspot_data_root ?= $(data_root)/hspot
+hspot_gt_root ?= $(results_root)/gt
+trackers_root ?= $(results_root)/trackers
+optuna_root ?= $(results_root)/optuna
 TUNE_TRIALS ?= 64
 TUNE_GPU_ID ?= 0
 TUNE_PRUNING_SEQS ?= 2
@@ -20,13 +34,25 @@ TUNE_EARLY_STOP_PATIENCE ?= 10
 TUNE_EARLY_STOP_MIN_DELTA ?= 0.01
 TUNE_EXTRA_ARGS ?= --mlflow-log-summary-json
 BASELINE_STUDY_NAME ?= hspot_baseline_val
-BASELINE_STUDY_DB ?= results/optuna/hspot_baseline_val.db
+BASELINE_STUDY_DB ?= $(optuna_root)/hspot_baseline_val.db
+BASELINE_SUMMARY_JSON ?= $(optuna_root)/$(BASELINE_STUDY_NAME)_summary.json
 BASELINE_MLFLOW_EXPERIMENT ?= BoostTrack-Baselines
 BASELINE_MLFLOW_RUN_NAME ?= hspot_baseline_val
 BASELINE_EXTRA_ARGS ?=
+TUNE_STUDY_NAME ?= boosttrack_hota_tuning
+TUNE_STUDY_DB ?= $(optuna_root)/$(TUNE_STUDY_NAME).db
+TUNE_SUMMARY_JSON ?= $(optuna_root)/$(TUNE_STUDY_NAME)_summary.json
 
 DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) --gpus $(GPU) --ipc=host --network=host \
-	-v $(PWD):$(WORKDIR) -w $(WORKDIR)
+	-v "$(PWD):$(WORKDIR)" \
+	-v "$(HOST_DATA_ROOT):$(data_root)" \
+	-v "$(HOST_RESULTS_ROOT):$(results_root)" \
+	-v "$(HOST_WEIGHTS_ROOT):$(weights_root)" \
+	-e BOOSTTRACK_DATA_DIR="$(data_root)" \
+	-e BOOSTTRACK_GT_FOLDER="$(hspot_gt_root)" \
+	-e BOOSTTRACK_TRACKERS_FOLDER="$(trackers_root)" \
+	-e BOOSTTRACK_WEIGHTS_DIR="$(weights_root)" \
+	-w $(WORKDIR)
 
 .PHONY: help vm-bootstrap docker-build docker-shell docker-gpu-check \
 	hspot-convert hspot-trackeval-setup hspot-trackeval-setup-allow-missing-gt \
@@ -47,12 +73,23 @@ help:
 	@echo "Key vars:"
 	@echo "  IMAGE=$(IMAGE)"
 	@echo "  MLFLOW_TRACKING_URI=$(MLFLOW_TRACKING_URI)"
+	@echo "  SURF_VOL=$(SURF_VOL)"
+	@echo "  DOCKER_STORAGE_ROOT=$(DOCKER_STORAGE_ROOT)"
+	@echo "  HOST_DATA_ROOT=$(HOST_DATA_ROOT)"
+	@echo "  HOST_RESULTS_ROOT=$(HOST_RESULTS_ROOT)"
+	@echo "  HOST_WEIGHTS_ROOT=$(HOST_WEIGHTS_ROOT)"
+	@echo "  data_root=$(data_root)"
+	@echo "  results_root=$(results_root)"
+	@echo "  weights_root=$(weights_root)"
 	@echo "  hspot_data_root=$(hspot_data_root)"
+	@echo "  hspot_gt_root=$(hspot_gt_root)"
+	@echo "  trackers_root=$(trackers_root)"
+	@echo "  optuna_root=$(optuna_root)"
 	@echo "  TUNE_TRIALS=$(TUNE_TRIALS)"
 	@echo "  TUNE_TIMEOUT_SEC=$(TUNE_TIMEOUT_SEC)"
 
 vm-bootstrap:
-	sudo bash scripts/setup_ubuntu2204_cuda12_docker.sh
+	sudo bash scripts/setup_ubuntu2204_cuda12_docker.sh $(if $(DOCKER_STORAGE_ROOT),--storage-root "$(DOCKER_STORAGE_ROOT)",)
 
 docker-build:
 	docker build -t $(IMAGE) .
@@ -84,8 +121,12 @@ baseline-hspot-val:
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \
 		--dataset hspot \
 		--benchmark hspot \
+		--data-root $(data_root) \
+		--gt-folder $(hspot_gt_root) \
+		--trackers-folder $(trackers_root) \
 		--study-name $(BASELINE_STUDY_NAME) \
 		--study-db $(BASELINE_STUDY_DB) \
+		--output-json $(BASELINE_SUMMARY_JSON) \
 		--n-trials 1 \
 		--pruning-seqs 0 \
 		--skip-train-pruning \
@@ -103,6 +144,12 @@ tune-hspot:
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \
 		--dataset hspot \
 		--benchmark hspot \
+		--data-root $(data_root) \
+		--gt-folder $(hspot_gt_root) \
+		--trackers-folder $(trackers_root) \
+		--study-name $(TUNE_STUDY_NAME) \
+		--study-db $(TUNE_STUDY_DB) \
+		--output-json $(TUNE_SUMMARY_JSON) \
 		--gpu-id $(TUNE_GPU_ID) \
 		--n-trials $(TUNE_TRIALS) \
 		--pruning-seqs $(TUNE_PRUNING_SEQS) \

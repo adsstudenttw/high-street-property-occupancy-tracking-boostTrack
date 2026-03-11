@@ -1,4 +1,11 @@
 from typing import Union, Dict, Tuple
+import os
+from pathlib import Path
+
+
+def _weights_path(filename: str) -> str:
+    weights_dir = Path(os.getenv("BOOSTTRACK_WEIGHTS_DIR", "external/weights"))
+    return str(weights_dir / filename)
 
 
 def get_detector_path_and_im_size(args) -> Tuple[str, Tuple[int, int]]:
@@ -8,20 +15,20 @@ def get_detector_path_and_im_size(args) -> Tuple[str, Tuple[int, int]]:
 
     if args.dataset == "mot17":
         if args.test_dataset:
-            detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
+            detector_path = _weights_path("bytetrack_x_mot17.pth.tar")
         else:
-            detector_path = "external/weights/bytetrack_ablation.pth.tar"
+            detector_path = _weights_path("bytetrack_ablation.pth.tar")
         size = (800, 1440)
     elif args.dataset == "mot20":
         if args.test_dataset:
-            detector_path = "external/weights/bytetrack_x_mot20.tar"
+            detector_path = _weights_path("bytetrack_x_mot20.tar")
             size = (896, 1600)
         else:
             # Just use the mot17 test model as the ablation model for 20
-            detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
+            detector_path = _weights_path("bytetrack_x_mot17.pth.tar")
             size = (800, 1440)
     elif args.dataset == "hspot":
-        detector_path = "external/weights/bytetrack_x_mot17.pth.tar"
+        detector_path = _weights_path("bytetrack_x_mot17.pth.tar")
         # Native hspot frame size (HxW): 960x1920.
         size = (960, 1920)
     else:

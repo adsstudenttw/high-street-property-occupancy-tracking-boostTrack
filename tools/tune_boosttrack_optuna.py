@@ -50,12 +50,26 @@ def parse_args():
     parser.add_argument(
         "--study-db", type=str, default="results/optuna/boosttrack_hota_tuning.db"
     )
+    parser.add_argument(
+        "--data-root",
+        type=str,
+        default=os.getenv("BOOSTTRACK_DATA_DIR", "data"),
+        help="Dataset root containing MOT17/MOT20/hspot folders.",
+    )
     parser.add_argument("--n-trials", type=int, default=30)
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--gpu-id", type=int, default=0, help="Single GPU id to use.")
-    parser.add_argument("--gt-folder", type=str, default="results/gt/")
-    parser.add_argument("--trackers-folder", type=str, default="results/trackers/")
+    parser.add_argument(
+        "--gt-folder",
+        type=str,
+        default=os.getenv("BOOSTTRACK_GT_FOLDER", "results/gt/"),
+    )
+    parser.add_argument(
+        "--trackers-folder",
+        type=str,
+        default=os.getenv("BOOSTTRACK_TRACKERS_FOLDER", "results/trackers/"),
+    )
     parser.add_argument(
         "--pruning-seqs",
         type=int,
@@ -309,6 +323,10 @@ def build_main_cmd(args, exp_name, split_name, params, seq_subset):
         "main.py",
         "--dataset",
         args.dataset,
+        "--data_dir",
+        args.data_root,
+        "--result_folder",
+        args.trackers_folder,
         "--exp_name",
         exp_name,
         "--split",

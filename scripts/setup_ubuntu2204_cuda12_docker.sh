@@ -1,9 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+STORAGE_ROOT=""
+ORIGINAL_ARGS=("$@")
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash scripts/setup_ubuntu2204_cuda12_docker.sh [--storage-root PATH]
+
+Options:
+  --storage-root PATH  Host path for Docker/containerd storage (recommended on SURF volume)
+  -h, --help           Show this help
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --storage-root)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --storage-root" >&2
+        usage
+        exit 1
+      fi
+      STORAGE_ROOT="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Re-running with sudo..."
-  exec sudo -E bash "$0" "$@"
+  exec sudo -E bash "$0" "${ORIGINAL_ARGS[@]}"
 fi
 
 if [[ ! -f /etc/os-release ]]; then
@@ -16,9 +53,57 @@ if [[ "${ID}" != "ubuntu" || "${VERSION_ID}" != "22.04" ]]; then
   echo "This script targets Ubuntu 22.04. Detected: ${ID} ${VERSION_ID}" >&2
 fi
 
-echo "[1/5] Installing Docker Engine..."
+if [[ -n "${STORAGE_ROOT}" ]]; then
+  if [[ "${STORAGE_ROOT}" != /* ]]; then
+    echo "--storage-root must be an absolute path, got: ${STORAGE_ROOT}" >&2
+    exit 1
+  fi
+  if [[ ! -d "${STORAGE_ROOT}" ]]; then
+    echo "Storage root does not exist: ${STORAGE_ROOT}" >&2
+    echo "Mount/create your SURF volume path first, then rerun." >&2
+    exit 1
+  fi
+fi
+
+configure_storage_roots() {
+  local storage_root="$1"
+  local docker_root="${storage_root}/docker"
+  local containerd_root="${storage_root}/containerd/root"
+  local containerd_state="${storage_root}/containerd/state"
+
+  mkdir -p "${docker_root}" "${containerd_root}" "${containerd_state}"
+  install -m 0755 -d /etc/docker /etc/containerd
+
+  python3 - "${docker_root}" <<'PY'
+import json
+import pathlib
+import sys
+
+daemon_json = pathlib.Path("/etc/docker/daemon.json")
+docker_root = sys.argv[1]
+
+config = {}
+if daemon_json.exists():
+    try:
+        config = json.loads(daemon_json.read_text())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid JSON in {daemon_json}: {exc}")
+
+config["data-root"] = docker_root
+daemon_json.write_text(json.dumps(config, indent=2) + "\n")
+PY
+
+  if [[ ! -f /etc/containerd/config.toml ]]; then
+    containerd config default > /etc/containerd/config.toml
+  fi
+
+  sed -i -E "s#^root = \".*\"#root = \"${containerd_root}\"#" /etc/containerd/config.toml
+  sed -i -E "s#^state = \".*\"#state = \"${containerd_state}\"#" /etc/containerd/config.toml
+}
+
+echo "[1/6] Installing Docker Engine..."
 apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release
+apt-get install -y ca-certificates curl gnupg lsb-release python3
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
@@ -28,19 +113,19 @@ echo \
 apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-echo "[2/5] Enabling Docker service..."
+echo "[2/6] Enabling Docker and containerd services..."
+systemctl enable containerd
 systemctl enable docker
-systemctl restart docker
 
 TARGET_USER="${SUDO_USER:-${USER}}"
 if id -nG "${TARGET_USER}" | grep -qw docker; then
-  echo "[3/5] User '${TARGET_USER}' already in docker group."
+  echo "[3/6] User '${TARGET_USER}' already in docker group."
 else
-  echo "[3/5] Adding user '${TARGET_USER}' to docker group..."
+  echo "[3/6] Adding user '${TARGET_USER}' to docker group..."
   usermod -aG docker "${TARGET_USER}"
 fi
 
-echo "[4/5] Installing NVIDIA Container Toolkit..."
+echo "[4/6] Installing NVIDIA Container Toolkit..."
 distribution="${ID}${VERSION_ID}"
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
   gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
@@ -50,10 +135,20 @@ curl -s -L "https://nvidia.github.io/libnvidia-container/${distribution}/libnvid
 apt-get update
 apt-get install -y nvidia-container-toolkit
 nvidia-ctk runtime configure --runtime=docker
+
+if [[ -n "${STORAGE_ROOT}" ]]; then
+  echo "[5/6] Configuring Docker/containerd storage under ${STORAGE_ROOT}..."
+  configure_storage_roots "${STORAGE_ROOT}"
+else
+  echo "[5/6] Using default Docker/containerd storage paths under /var/lib."
+fi
+
+echo "[6/6] Restarting services and validating installation..."
+systemctl restart containerd
 systemctl restart docker
 
-echo "[5/5] Validating installation..."
 docker --version
+docker info --format 'Docker Root Dir: {{.DockerRootDir}}'
 nvidia-smi || true
 
 cat <<EOF
@@ -66,5 +161,7 @@ Next steps:
    docker run --rm --gpus all nvidia/cuda:12.1.1-runtime-ubuntu22.04 nvidia-smi
 3. Build project image from repository root:
    make docker-build
+4. To keep project data off root disk, run make commands with volume-backed host paths:
+   make hspot-convert HOST_DATA_ROOT=<volume>/data HOST_RESULTS_ROOT=<volume>/results HOST_WEIGHTS_ROOT=<volume>/weights
 
 EOF
