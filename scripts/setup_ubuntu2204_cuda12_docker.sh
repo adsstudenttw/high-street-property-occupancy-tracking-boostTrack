@@ -70,6 +70,7 @@ configure_storage_roots() {
   local docker_root="${storage_root}/docker"
   local containerd_root="${storage_root}/containerd/root"
   local containerd_state="${storage_root}/containerd/state"
+  local tmp_cfg
 
   mkdir -p "${docker_root}" "${containerd_root}" "${containerd_state}"
   install -m 0755 -d /etc/docker /etc/containerd
@@ -97,8 +98,62 @@ PY
     containerd config default > /etc/containerd/config.toml
   fi
 
-  sed -i -E "s#^root = \".*\"#root = \"${containerd_root}\"#" /etc/containerd/config.toml
-  sed -i -E "s#^state = \".*\"#state = \"${containerd_state}\"#" /etc/containerd/config.toml
+  # Ensure top-level containerd root/state are always present and point to storage_root,
+  # even when an existing config file omits these keys.
+  tmp_cfg="$(mktemp)"
+  awk \
+    -v desired_root="${containerd_root}" \
+    -v desired_state="${containerd_state}" \
+    '
+    BEGIN {
+      saw_table = 0
+      root_set = 0
+      state_set = 0
+    }
+    {
+      if ($0 ~ /^[[:space:]]*\[/ && !saw_table) {
+        if (!root_set) {
+          print "root = \"" desired_root "\""
+          root_set = 1
+        }
+        if (!state_set) {
+          print "state = \"" desired_state "\""
+          state_set = 1
+        }
+        saw_table = 1
+      }
+
+      if (!saw_table) {
+        if ($0 ~ /^[[:space:]]*root[[:space:]]*=/) {
+          if (!root_set) {
+            print "root = \"" desired_root "\""
+            root_set = 1
+          }
+          next
+        }
+        if ($0 ~ /^[[:space:]]*state[[:space:]]*=/) {
+          if (!state_set) {
+            print "state = \"" desired_state "\""
+            state_set = 1
+          }
+          next
+        }
+      }
+
+      print $0
+    }
+    END {
+      if (!saw_table) {
+        if (!root_set) {
+          print "root = \"" desired_root "\""
+        }
+        if (!state_set) {
+          print "state = \"" desired_state "\""
+        }
+      }
+    }
+    ' /etc/containerd/config.toml > "${tmp_cfg}"
+  mv "${tmp_cfg}" /etc/containerd/config.toml
 }
 
 echo "[1/6] Installing Docker Engine..."
