@@ -1,5 +1,6 @@
 ### Step-by-step: SURF volume-first setup (Ubuntu 22.04)
 This repository supports a Docker workflow where datasets, weights, tracking outputs, and Docker/containerd storage can all be placed on a mounted SURF volume.
+The Docker image builds the Python environment from `boost-track-env.yml` (with the `prefix:` entry ignored inside the container).
 
 Note: Ubuntu system packages installed with `apt` (for example Docker binaries) still live on the OS disk. Project/runtime-heavy storage is what this setup redirects to the SURF volume.
 
