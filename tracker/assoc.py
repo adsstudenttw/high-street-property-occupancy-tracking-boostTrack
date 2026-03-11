@@ -3,12 +3,7 @@ from copy import deepcopy
 from typing import Optional
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
-
-try:
-    import lap
-except ImportError:
-    lap = None
+import lap
 
 
 def shape_similarity(detects: np.ndarray, tracks: np.ndarray) -> np.ndarray:
@@ -124,12 +119,8 @@ def match(cost_matrix: np.ndarray, threshold: float) -> np.ndarray:
         if a.sum(1).max() == 1 and a.sum(0).max() == 1:
             matched_indices = np.stack(np.where(a), axis=1)
         else:
-            if lap is not None:
-                _, x, y = lap.lapjv(-cost_matrix, extend_cost=True)
-                matched_indices = np.array([[y[i], i] for i in x if i >= 0])
-            else:
-                row_idx, col_idx = linear_sum_assignment(-cost_matrix)
-                matched_indices = np.stack((row_idx, col_idx), axis=1)
+            _, x, y = lap.lapjv(-cost_matrix, extend_cost=True)
+            matched_indices = np.array([[y[i], i] for i in x if i >= 0])
     else:
         matched_indices = np.empty(shape=(0, 2))
     return matched_indices

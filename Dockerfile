@@ -4,11 +4,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
+    SETUPTOOLS_USE_DISTUTILS=stdlib \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-dev \
+    python3-distutils \
     python3-pip \
     python3-venv \
     build-essential \
@@ -32,6 +34,9 @@ RUN uv venv /opt/venv && \
     uv pip install --python /opt/venv/bin/python \
     --index-url https://download.pytorch.org/whl/cu121 \
     torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 && \
+    uv pip install --python /opt/venv/bin/python \
+    pip==23.2.1 setuptools==68.0.0 wheel==0.41.2 numpy==1.24.3 cython==3.0.2 && \
+    uv pip install --python /opt/venv/bin/python --no-build-isolation lap==0.4.0 && \
     uv pip install --python /opt/venv/bin/python -r /tmp/requirements-uv.txt
 
 ENV PATH="/opt/venv/bin:${PATH}" \
