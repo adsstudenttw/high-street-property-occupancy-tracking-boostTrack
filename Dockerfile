@@ -33,7 +33,7 @@ RUN uv venv /opt/venv && \
     --index-url https://download.pytorch.org/whl/cu121 \
     torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 && \
     uv pip install --python /opt/venv/bin/python \
-    setuptools wheel numpy==1.24.4 cython==3.0.10 && \
+    setuptools==80.9.0 wheel numpy==1.24.4 cython==3.0.10 && \
     uv pip install --python /opt/venv/bin/python \
     --no-build-isolation lap==0.4.0 && \
     uv pip install --python /opt/venv/bin/python -r /tmp/requirements-uv.txt
