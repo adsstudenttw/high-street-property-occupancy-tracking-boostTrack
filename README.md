@@ -62,12 +62,12 @@ make hspot-trackeval-setup-allow-missing-gt
 
 8. Configure remote MLflow (optional):
 ```shell
-export MLFLOW_TRACKING_URI=http://<mlflow-host>:5000
+export MLFLOW_TRACKING_URI=http://ubuntu2204sudo.property-occupa.src.surf-hosted.nl
 ```
-If required:
+
+Smoke-test the connection before running longer jobs:
 ```shell
-export MLFLOW_TRACKING_USERNAME=<user>
-export MLFLOW_TRACKING_PASSWORD=<password>
+make mlflow-smoke-test
 ```
 
 9. Run baseline and tuning:

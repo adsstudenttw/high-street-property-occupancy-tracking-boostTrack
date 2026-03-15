@@ -43,7 +43,10 @@ TUNE_STUDY_NAME ?= boosttrack_hota_tuning
 TUNE_STUDY_DB ?= $(optuna_root)/$(TUNE_STUDY_NAME).db
 TUNE_SUMMARY_JSON ?= $(optuna_root)/$(TUNE_STUDY_NAME)_summary.json
 
-DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) --gpus $(GPU) --ipc=host --network=host \
+DOCKER_GPU_ARGS = $(if $(strip $(GPU)),--gpus $(GPU),)
+DOCKER_MLFLOW_ENV = -e MLFLOW_TRACKING_URI="$(MLFLOW_TRACKING_URI)"
+
+DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) $(DOCKER_GPU_ARGS) --ipc=host --network=host \
 	-v "$(PWD):$(WORKDIR)" \
 	-v "$(HOST_DATA_ROOT):$(data_root)" \
 	-v "$(HOST_RESULTS_ROOT):$(results_root)" \
@@ -54,7 +57,7 @@ DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) --gpus $(GPU) --ipc=h
 	-e BOOSTTRACK_WEIGHTS_DIR="$(weights_root)" \
 	-w $(WORKDIR)
 
-.PHONY: help vm-bootstrap docker-build docker-shell docker-gpu-check \
+.PHONY: help vm-bootstrap docker-build docker-shell docker-gpu-check mlflow-smoke-test \
 	hspot-convert hspot-trackeval-setup hspot-trackeval-setup-allow-missing-gt \
 	baseline-hspot-val tune-hspot
 
@@ -64,6 +67,7 @@ help:
 	@echo "  docker-build          Build CUDA12 + uv project image"
 	@echo "  docker-shell          Open interactive shell inside container"
 	@echo "  docker-gpu-check      Verify GPU visibility inside container"
+	@echo "  mlflow-smoke-test     Validate remote MLflow logging with a tiny run + artifact"
 	@echo "  hspot-convert         Convert hspot MOT-format dataset to COCO JSON"
 	@echo "  hspot-trackeval-setup Prepare TrackEval GT/seqmaps for hspot"
 	@echo "  hspot-trackeval-setup-allow-missing-gt  Same as above, but skips missing test GT files"
@@ -72,6 +76,7 @@ help:
 	@echo ""
 	@echo "Key vars:"
 	@echo "  IMAGE=$(IMAGE)"
+	@echo "  GPU=$(GPU)  (set to empty on CPU-only VMs)"
 	@echo "  MLFLOW_TRACKING_URI=$(MLFLOW_TRACKING_URI)"
 	@echo "  SURF_VOL=$(SURF_VOL)"
 	@echo "  DOCKER_STORAGE_ROOT=$(DOCKER_STORAGE_ROOT)"
@@ -96,12 +101,17 @@ docker-build:
 
 docker-shell:
 	$(DOCKER_RUN_BASE) \
-		-e MLFLOW_TRACKING_URI="$(MLFLOW_TRACKING_URI)" \
+		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) bash
 
 docker-gpu-check:
 	$(DOCKER_RUN_BASE) \
 		$(IMAGE) nvidia-smi
+
+mlflow-smoke-test:
+	$(DOCKER_RUN_BASE) \
+		$(DOCKER_MLFLOW_ENV) \
+		$(IMAGE) python3 tools/mlflow_smoke_test.py
 
 hspot-convert:
 	$(DOCKER_RUN_BASE) \
@@ -117,7 +127,7 @@ hspot-trackeval-setup-allow-missing-gt:
 
 baseline-hspot-val:
 	$(DOCKER_RUN_BASE) \
-		-e MLFLOW_TRACKING_URI="$(MLFLOW_TRACKING_URI)" \
+		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \
 		--dataset hspot \
 		--benchmark hspot \
@@ -140,7 +150,7 @@ baseline-hspot-val:
 
 tune-hspot:
 	$(DOCKER_RUN_BASE) \
-		-e MLFLOW_TRACKING_URI="$(MLFLOW_TRACKING_URI)" \
+		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \
 		--dataset hspot \
 		--benchmark hspot \
