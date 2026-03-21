@@ -11,14 +11,20 @@ DOCKER_STORAGE_ROOT ?= $(SURF_VOL)/runtime
 HOST_DATA_ROOT ?= $(SURF_VOL)/data
 HOST_RESULTS_ROOT ?= $(SURF_VOL)/results
 HOST_WEIGHTS_ROOT ?= $(SURF_VOL)/weights
+HOST_CACHE_ROOT ?= $(SURF_VOL)/cache
+HOST_TMP_ROOT ?= $(SURF_VOL)/tmp
+HOST_CONTAINER_HOME ?= $(SURF_VOL)/container-home
 
 # Container-visible paths.
 data_root ?= $(WORKDIR)/data
 results_root ?= $(WORKDIR)/results
 weights_root ?= $(WORKDIR)/external/weights
+cache_root ?= /cache
+tmp_root ?= /tmp-volume
+container_home ?= /home/boosttrack
 
 # Remote MLflow URI (already running on a separate VM)
-MLFLOW_TRACKING_URI ?=
+MLFLOW_TRACKING_URI ?= http://ubuntu2204sudo.property-occupa.src.surf-hosted.nl:80
 
 # hspot defaults
 hspot_data_root ?= $(data_root)/hspot
@@ -51,19 +57,30 @@ DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) $(DOCKER_GPU_ARGS) --
 	-v "$(HOST_DATA_ROOT):$(data_root)" \
 	-v "$(HOST_RESULTS_ROOT):$(results_root)" \
 	-v "$(HOST_WEIGHTS_ROOT):$(weights_root)" \
+	-v "$(HOST_CACHE_ROOT):$(cache_root)" \
+	-v "$(HOST_TMP_ROOT):$(tmp_root)" \
+	-v "$(HOST_CONTAINER_HOME):$(container_home)" \
 	-e BOOSTTRACK_DATA_DIR="$(data_root)" \
 	-e BOOSTTRACK_GT_FOLDER="$(hspot_gt_root)" \
 	-e BOOSTTRACK_TRACKERS_FOLDER="$(trackers_root)" \
 	-e BOOSTTRACK_WEIGHTS_DIR="$(weights_root)" \
+	-e HOME="$(container_home)" \
+	-e XDG_CACHE_HOME="$(cache_root)" \
+	-e TORCH_HOME="$(cache_root)/torch" \
+	-e PIP_CACHE_DIR="$(cache_root)/pip" \
+	-e UV_CACHE_DIR="$(cache_root)/uv" \
+	-e MPLCONFIGDIR="$(cache_root)/matplotlib" \
+	-e TMPDIR="$(tmp_root)" \
 	-w $(WORKDIR)
 
 .PHONY: help vm-bootstrap docker-build docker-shell docker-gpu-check mlflow-smoke-test \
-	hspot-convert hspot-trackeval-setup hspot-trackeval-setup-allow-missing-gt \
+	surf-layout hspot-convert hspot-trackeval-setup hspot-trackeval-setup-allow-missing-gt \
 	baseline-hspot-val tune-hspot
 
 help:
 	@echo "Targets:"
 	@echo "  vm-bootstrap          Install Docker + NVIDIA Container Toolkit on Ubuntu 22.04 VM"
+	@echo "  surf-layout           Create the default SURF volume directory layout"
 	@echo "  docker-build          Build CUDA12 + uv project image"
 	@echo "  docker-shell          Open interactive shell inside container"
 	@echo "  docker-gpu-check      Verify GPU visibility inside container"
@@ -83,9 +100,15 @@ help:
 	@echo "  HOST_DATA_ROOT=$(HOST_DATA_ROOT)"
 	@echo "  HOST_RESULTS_ROOT=$(HOST_RESULTS_ROOT)"
 	@echo "  HOST_WEIGHTS_ROOT=$(HOST_WEIGHTS_ROOT)"
+	@echo "  HOST_CACHE_ROOT=$(HOST_CACHE_ROOT)"
+	@echo "  HOST_TMP_ROOT=$(HOST_TMP_ROOT)"
+	@echo "  HOST_CONTAINER_HOME=$(HOST_CONTAINER_HOME)"
 	@echo "  data_root=$(data_root)"
 	@echo "  results_root=$(results_root)"
 	@echo "  weights_root=$(weights_root)"
+	@echo "  cache_root=$(cache_root)"
+	@echo "  tmp_root=$(tmp_root)"
+	@echo "  container_home=$(container_home)"
 	@echo "  hspot_data_root=$(hspot_data_root)"
 	@echo "  hspot_gt_root=$(hspot_gt_root)"
 	@echo "  trackers_root=$(trackers_root)"
@@ -93,39 +116,42 @@ help:
 	@echo "  TUNE_TRIALS=$(TUNE_TRIALS)"
 	@echo "  TUNE_TIMEOUT_SEC=$(TUNE_TIMEOUT_SEC)"
 
-vm-bootstrap:
+surf-layout:
+	mkdir -p "$(DOCKER_STORAGE_ROOT)" "$(HOST_DATA_ROOT)" "$(HOST_RESULTS_ROOT)" "$(HOST_WEIGHTS_ROOT)" "$(HOST_CACHE_ROOT)" "$(HOST_TMP_ROOT)" "$(HOST_CONTAINER_HOME)"
+
+vm-bootstrap: surf-layout
 	sudo bash scripts/setup_ubuntu2204_cuda12_docker.sh $(if $(DOCKER_STORAGE_ROOT),--storage-root "$(DOCKER_STORAGE_ROOT)",)
 
-docker-build:
+docker-build: surf-layout
 	docker build -t $(IMAGE) .
 
-docker-shell:
+docker-shell: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) bash
 
-docker-gpu-check:
+docker-gpu-check: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(IMAGE) nvidia-smi
 
-mlflow-smoke-test:
+mlflow-smoke-test: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) python3 tools/mlflow_smoke_test.py
 
-hspot-convert:
+hspot-convert: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(IMAGE) python3 data/tools/convert_hspot_to_coco.py --data-path $(hspot_data_root) --splits train,val,test
 
-hspot-trackeval-setup:
+hspot-trackeval-setup: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(IMAGE) bash tools/setup_hspot_trackeval_gt.sh --data-root $(hspot_data_root) --gt-root $(hspot_gt_root)
 
-hspot-trackeval-setup-allow-missing-gt:
+hspot-trackeval-setup-allow-missing-gt: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(IMAGE) bash tools/setup_hspot_trackeval_gt.sh --data-root $(hspot_data_root) --gt-root $(hspot_gt_root) --allow-missing-gt
 
-baseline-hspot-val:
+baseline-hspot-val: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \
@@ -148,7 +174,7 @@ baseline-hspot-val:
 		$${MLFLOW_TRACKING_URI:+--mlflow-tracking-uri $$MLFLOW_TRACKING_URI} \
 		$(BASELINE_EXTRA_ARGS)
 
-tune-hspot:
+tune-hspot: surf-layout
 	$(DOCKER_RUN_BASE) \
 		$(DOCKER_MLFLOW_ENV) \
 		$(IMAGE) python3 tools/tune_boosttrack_optuna.py \

@@ -27,9 +27,11 @@ RUN wget -qO /tmp/miniconda.sh \
 ENV PATH="/opt/conda/bin:${PATH}"
 
 COPY boost-track-env.yml /tmp/boost-track-env.yml
+COPY scripts/patch_onnx_mapping.py /tmp/patch_onnx_mapping.py
 
 RUN sed '/^prefix:/d' /tmp/boost-track-env.yml > /tmp/boost-track-env.clean.yml && \
     conda env create -n boostTrack -f /tmp/boost-track-env.clean.yml && \
+    /opt/conda/envs/boostTrack/bin/python /tmp/patch_onnx_mapping.py && \
     conda clean -afy
 
 ENV PATH="/opt/conda/envs/boostTrack/bin:/opt/conda/bin:${PATH}" \

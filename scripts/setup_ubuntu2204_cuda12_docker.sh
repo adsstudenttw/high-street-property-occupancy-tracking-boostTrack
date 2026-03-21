@@ -3,6 +3,7 @@ set -euo pipefail
 
 STORAGE_ROOT=""
 ORIGINAL_ARGS=("$@")
+APT_GET_OPTS=()
 
 usage() {
   cat <<'EOF'
@@ -64,6 +65,22 @@ if [[ -n "${STORAGE_ROOT}" ]]; then
     exit 1
   fi
 fi
+
+configure_install_roots() {
+  local storage_root="$1"
+  local apt_cache="${storage_root}/apt/cache"
+  local apt_lists="${storage_root}/apt/lists"
+  local host_tmp="${storage_root}/host-tmp"
+
+  mkdir -p "${apt_cache}/partial" "${apt_lists}/partial" "${host_tmp}"
+  chmod 1777 "${host_tmp}"
+
+  export TMPDIR="${host_tmp}"
+  APT_GET_OPTS=(
+    -o "Dir::Cache::archives=${apt_cache}"
+    -o "Dir::State::lists=${apt_lists}"
+  )
+}
 
 configure_storage_roots() {
   local storage_root="$1"
@@ -156,17 +173,23 @@ PY
   mv "${tmp_cfg}" /etc/containerd/config.toml
 }
 
-echo "[1/6] Installing Docker Engine..."
-apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release python3
+if [[ -n "${STORAGE_ROOT}" ]]; then
+  configure_install_roots "${STORAGE_ROOT}"
+  echo "[1/6] Installing Docker Engine with package cache/tmp under ${STORAGE_ROOT}..."
+else
+  echo "[1/6] Installing Docker Engine..."
+fi
+
+apt-get "${APT_GET_OPTS[@]}" update
+apt-get "${APT_GET_OPTS[@]}" install -y ca-certificates curl gnupg lsb-release python3
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
   ${VERSION_CODENAME} stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+apt-get "${APT_GET_OPTS[@]}" update
+apt-get "${APT_GET_OPTS[@]}" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 echo "[2/6] Enabling Docker and containerd services..."
 systemctl enable containerd
@@ -187,8 +210,8 @@ curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
 curl -s -L "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" | \
   sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
   tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
-apt-get update
-apt-get install -y nvidia-container-toolkit
+apt-get "${APT_GET_OPTS[@]}" update
+apt-get "${APT_GET_OPTS[@]}" install -y nvidia-container-toolkit
 nvidia-ctk runtime configure --runtime=docker
 
 if [[ -n "${STORAGE_ROOT}" ]]; then
@@ -201,6 +224,10 @@ fi
 echo "[6/6] Restarting services and validating installation..."
 systemctl restart containerd
 systemctl restart docker
+
+if [[ ${#APT_GET_OPTS[@]} -gt 0 ]]; then
+  apt-get "${APT_GET_OPTS[@]}" clean
+fi
 
 docker --version
 docker info --format 'Docker Root Dir: {{.DockerRootDir}}'
@@ -216,7 +243,15 @@ Next steps:
    docker run --rm --gpus all nvidia/cuda:12.1.1-runtime-ubuntu22.04 nvidia-smi
 3. Build project image from repository root:
    make docker-build
-4. To keep project data off root disk, run make commands with volume-backed host paths:
-   make hspot-convert HOST_DATA_ROOT=<volume>/data HOST_RESULTS_ROOT=<volume>/results HOST_WEIGHTS_ROOT=<volume>/weights
+4. Keep the repository itself on the SURF volume and use the provided volume-backed defaults:
+   make surf-layout
+5. Project data, caches, container HOME, and temporary files will resolve under:
+   ${STORAGE_ROOT:-<your-volume>/runtime}  (Docker/containerd + bootstrap cache/tmp)
+   ${STORAGE_ROOT%/runtime}/data          (datasets)
+   ${STORAGE_ROOT%/runtime}/results       (logs/checkpoints/artifacts)
+   ${STORAGE_ROOT%/runtime}/weights       (model weights)
+   ${STORAGE_ROOT%/runtime}/cache         (runtime caches)
+   ${STORAGE_ROOT%/runtime}/tmp           (container TMPDIR)
+   ${STORAGE_ROOT%/runtime}/container-home (container HOME / ~/.cache fallback)
 
 EOF
