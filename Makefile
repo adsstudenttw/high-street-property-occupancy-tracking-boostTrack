@@ -31,6 +31,7 @@ hspot_data_root ?= $(data_root)/hspot
 hspot_gt_root ?= $(results_root)/gt
 trackers_root ?= $(results_root)/trackers
 optuna_root ?= $(results_root)/optuna
+viz_root ?= $(results_root)/visualizations
 TUNE_TRIALS ?= 64
 TUNE_GPU_ID ?= 0
 TUNE_PRUNING_SEQS ?= 2
@@ -48,6 +49,10 @@ BASELINE_EXTRA_ARGS ?=
 TUNE_STUDY_NAME ?= boosttrack_hota_tuning
 TUNE_STUDY_DB ?= $(optuna_root)/$(TUNE_STUDY_NAME).db
 TUNE_SUMMARY_JSON ?= $(optuna_root)/$(TUNE_STUDY_NAME)_summary.json
+VIS_SPLIT ?= val
+VIS_TRACKER ?=
+VIS_SEQ ?=
+VIS_MAX_FRAMES ?= 0
 
 DOCKER_GPU_ARGS = $(if $(strip $(GPU)),--gpus $(GPU),)
 DOCKER_MLFLOW_ENV = -e MLFLOW_TRACKING_URI="$(MLFLOW_TRACKING_URI)"
@@ -75,7 +80,7 @@ DOCKER_RUN_BASE = docker run --rm --name $(CONTAINER_NAME) $(DOCKER_GPU_ARGS) --
 
 .PHONY: help vm-bootstrap docker-build docker-shell docker-gpu-check mlflow-smoke-test \
 	surf-layout hspot-convert hspot-trackeval-setup hspot-trackeval-setup-allow-missing-gt \
-	baseline-hspot-val tune-hspot
+	baseline-hspot-val tune-hspot visualize-hspot
 
 help:
 	@echo "Targets:"
@@ -90,6 +95,7 @@ help:
 	@echo "  hspot-trackeval-setup-allow-missing-gt  Same as above, but skips missing test GT files"
 	@echo "  baseline-hspot-val    Run default-parameter baseline on hspot val (logs to MLflow if URI set)"
 	@echo "  tune-hspot            Run Optuna tuning on hspot (train pruning, val objective, test final eval)"
+	@echo "  visualize-hspot       Render hspot frames with GT and prediction boxes overlaid"
 	@echo ""
 	@echo "Key vars:"
 	@echo "  IMAGE=$(IMAGE)"
@@ -113,8 +119,13 @@ help:
 	@echo "  hspot_gt_root=$(hspot_gt_root)"
 	@echo "  trackers_root=$(trackers_root)"
 	@echo "  optuna_root=$(optuna_root)"
+	@echo "  viz_root=$(viz_root)"
 	@echo "  TUNE_TRIALS=$(TUNE_TRIALS)"
 	@echo "  TUNE_TIMEOUT_SEC=$(TUNE_TIMEOUT_SEC)"
+	@echo "  VIS_SPLIT=$(VIS_SPLIT)"
+	@echo "  VIS_TRACKER=$(VIS_TRACKER)"
+	@echo "  VIS_SEQ=$(VIS_SEQ)"
+	@echo "  VIS_MAX_FRAMES=$(VIS_MAX_FRAMES)"
 
 surf-layout:
 	mkdir -p "$(DOCKER_STORAGE_ROOT)" "$(HOST_DATA_ROOT)" "$(HOST_RESULTS_ROOT)" "$(HOST_WEIGHTS_ROOT)" "$(HOST_CACHE_ROOT)" "$(HOST_TMP_ROOT)" "$(HOST_CONTAINER_HOME)"
@@ -195,3 +206,16 @@ tune-hspot: surf-layout
 		--early-stop-min-delta $(TUNE_EARLY_STOP_MIN_DELTA) \
 		$${MLFLOW_TRACKING_URI:+--mlflow-tracking-uri $$MLFLOW_TRACKING_URI} \
 		$(TUNE_EXTRA_ARGS)
+
+visualize-hspot: surf-layout
+	@test -n "$(VIS_TRACKER)" || (echo "VIS_TRACKER is required, e.g. VIS_TRACKER=hspot_baseline_val_trial_0005_full_post_gbi" >&2; exit 1)
+	$(DOCKER_RUN_BASE) \
+		$(IMAGE) python3 tools/visualize_hspot_tracking.py \
+		--data-root $(hspot_data_root) \
+		--gt-root $(hspot_gt_root) \
+		--trackers-root $(trackers_root) \
+		--split $(VIS_SPLIT) \
+		--tracker-name $(VIS_TRACKER) \
+		--output-root $(viz_root) \
+		--max-frames $(VIS_MAX_FRAMES) \
+		$(if $(strip $(VIS_SEQ)),--seq $(VIS_SEQ),)
