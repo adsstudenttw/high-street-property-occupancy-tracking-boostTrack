@@ -105,13 +105,17 @@ prepare_split() {
 
     mkdir -p "$dst_seq/gt"
     # TrackEval's MOTChallenge pedestrian benchmark rejects non-pedestrian or invalid
-    # class ids during preprocessing. hspot is evaluated as a single pedestrian class,
-    # so normalize the copied GT class column to 1 in the TrackEval-specific mirror.
+    # class ids during preprocessing, and also requires track ids to be unique within
+    # each frame. hspot is evaluated as a single pedestrian class, so normalize the
+    # copied GT class column to 1 in the TrackEval-specific mirror and drop duplicate
+    # (frame_id, track_id) rows there. The source dataset is left untouched.
     python3 - "$src_gt" "$dst_seq/gt/gt.txt" <<'PY'
 import csv
 import sys
 
 src_path, dst_path = sys.argv[1], sys.argv[2]
+seen = set()
+duplicates_dropped = 0
 
 with open(src_path, newline="") as src_f, open(dst_path, "w", newline="") as dst_f:
     reader = csv.reader(src_f)
@@ -119,9 +123,21 @@ with open(src_path, newline="") as src_f, open(dst_path, "w", newline="") as dst
     for row in reader:
         if not row:
             continue
+        if len(row) >= 2:
+            key = (row[0], row[1])
+            if key in seen:
+                duplicates_dropped += 1
+                continue
+            seen.add(key)
         if len(row) >= 8:
             row[7] = "1"
         writer.writerow(row)
+
+if duplicates_dropped:
+    print(
+        f"Dropped {duplicates_dropped} duplicate (frame_id, track_id) GT rows while preparing {dst_path}",
+        file=sys.stderr,
+    )
 PY
     cp "$src_ini" "$dst_seq/seqinfo.ini"
     echo "$seq" >> "$tmp_seqmap"
