@@ -104,7 +104,25 @@ prepare_split() {
     fi
 
     mkdir -p "$dst_seq/gt"
-    cp "$src_gt" "$dst_seq/gt/gt.txt"
+    # TrackEval's MOTChallenge pedestrian benchmark rejects non-pedestrian or invalid
+    # class ids during preprocessing. hspot is evaluated as a single pedestrian class,
+    # so normalize the copied GT class column to 1 in the TrackEval-specific mirror.
+    python3 - "$src_gt" "$dst_seq/gt/gt.txt" <<'PY'
+import csv
+import sys
+
+src_path, dst_path = sys.argv[1], sys.argv[2]
+
+with open(src_path, newline="") as src_f, open(dst_path, "w", newline="") as dst_f:
+    reader = csv.reader(src_f)
+    writer = csv.writer(dst_f)
+    for row in reader:
+        if not row:
+            continue
+        if len(row) >= 8:
+            row[7] = "1"
+        writer.writerow(row)
+PY
     cp "$src_ini" "$dst_seq/seqinfo.ini"
     echo "$seq" >> "$tmp_seqmap"
     copied_count=$((copied_count + 1))
