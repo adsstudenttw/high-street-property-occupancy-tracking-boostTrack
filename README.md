@@ -56,6 +56,9 @@ Default resolved paths are:
 
 Inside the container these are exposed as:
 - `HOME=/home/boosttrack`
+- `BOOSTTRACK_DATA_DIR=/data`
+- `BOOSTTRACK_GT_FOLDER=/results/gt`
+- `BOOSTTRACK_WEIGHTS_DIR=/weights`
 - `XDG_CACHE_HOME=/cache`
 - `TORCH_HOME=/cache/torch`
 - `TMPDIR=/tmp-volume`

@@ -16,9 +16,9 @@ HOST_TMP_ROOT ?= $(SURF_VOL)/tmp
 HOST_CONTAINER_HOME ?= $(SURF_VOL)/container-home
 
 # Container-visible paths.
-data_root ?= $(WORKDIR)/data
-results_root ?= $(WORKDIR)/results
-weights_root ?= $(WORKDIR)/external/weights
+data_root ?= /data
+results_root ?= /results
+weights_root ?= /weights
 cache_root ?= /cache
 tmp_root ?= /tmp-volume
 container_home ?= /home/boosttrack
