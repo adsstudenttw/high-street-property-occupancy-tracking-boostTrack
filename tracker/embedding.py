@@ -9,6 +9,7 @@ import torchvision
 import torchreid
 import numpy as np
 
+from default_settings import _weights_path
 from external.adaptors.fastreid_adaptor import FastReID
 
 """
@@ -165,16 +166,16 @@ class EmbeddingComputer:
     def initialize_model(self):
         if self.dataset == "mot17":
             if self.test_dataset:
-                path = "external/weights/mot17_sbs_S50.pth"
+                path = _weights_path("mot17_sbs_S50.pth")
             else:
                 return self._get_general_model()
         elif self.dataset == "mot20":
             if self.test_dataset:
-                path = "external/weights/mot20_sbs_S50.pth"
+                path = _weights_path("mot20_sbs_S50.pth")
             else:
                 return self._get_general_model()
         elif self.dataset == "dance":
-            path = "external/weights/dance_sbs_S50.pth"
+            path = _weights_path("dance_sbs_S50.pth")
         elif self.dataset == "hspot":
             return self._get_general_model()
         else:
@@ -194,7 +195,7 @@ class EmbeddingComputer:
         validation.
         """
         model = torchreid.models.build_model(name="osnet_ain_x1_0", num_classes=2510, loss="softmax", pretrained=False)
-        sd = torch.load("external/weights/osnet_ain_ms_d_c.pth.tar")["state_dict"]
+        sd = torch.load(_weights_path("osnet_ain_ms_d_c.pth.tar"))["state_dict"]
         new_state_dict = OrderedDict()
         for k, v in sd.items():
             name = k[7:]  # remove `module.`
