@@ -61,6 +61,10 @@ def GradientBoostingSmooth(input_):
 # GBI
 def GBInterpolation(path_in, path_out, interval):
     input_ = np.loadtxt(path_in, delimiter=',')
+    if input_.size == 0:
+        np.savetxt(path_out, np.zeros((0, 10)), fmt='%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d')
+        return
+    input_ = np.atleast_2d(input_)
     li = input_[np.lexsort([input_[:, 0], input_[:, 1]])]  # 按ID和帧排序
     gbi = GradientBoostingSmooth(li)
     np.savetxt(path_out, gbi, fmt='%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d')

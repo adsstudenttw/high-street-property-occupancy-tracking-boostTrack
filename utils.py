@@ -64,6 +64,10 @@ def dti(txt_path, save_path, n_min=25, n_dti=20):
         seq_name = seq_txt.replace("\\", "/").split("/")[-1]  ## To better play along with windows paths
         print(seq_name)
         seq_data = np.loadtxt(seq_txt, dtype=np.float64, delimiter=",")
+        if seq_data.size == 0:
+            dti_write_results(os.path.join(save_path, seq_name), np.zeros((0, 10), dtype=np.float64))
+            continue
+        seq_data = np.atleast_2d(seq_data)
         min_id = int(np.min(seq_data[:, 1]))
         max_id = int(np.max(seq_data[:, 1]))
         seq_results = np.zeros((1, 10), dtype=np.float64)
