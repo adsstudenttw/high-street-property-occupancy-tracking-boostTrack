@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-
-import onnx
-
+import sysconfig
 
 def main() -> None:
-    mapping_path = Path(onnx.__file__).resolve().parent / "mapping.py"
+    purelib = Path(sysconfig.get_paths()["purelib"])
+    mapping_path = purelib / "onnx" / "mapping.py"
     text = mapping_path.read_text()
     old = "int(TensorProto.STRING): np.dtype(np.object)"
     new = "int(TensorProto.STRING): np.dtype(object)"
