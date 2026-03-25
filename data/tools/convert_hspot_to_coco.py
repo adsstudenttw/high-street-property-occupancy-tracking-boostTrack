@@ -168,6 +168,8 @@ def convert_split(
 
             frame_num_by_order = offset
             stem = Path(file_name).stem
+            # Preserve the original numeric frame id when possible so tracker output
+            # aligns with MOT-style GT files used by TrackEval.
             frame_num_by_name = int(stem) if stem.isdigit() else frame_num_by_order
 
             frame_to_image_id[frame_num_by_order] = image_id
@@ -176,7 +178,7 @@ def convert_split(
             image_info = {
                 "file_name": f"{seq}/img1/{file_name}",
                 "id": image_id,
-                "frame_id": frame_num_by_order,
+                "frame_id": frame_num_by_name,
                 "prev_image_id": -1,
                 "next_image_id": -1,
                 "video_id": video_count,

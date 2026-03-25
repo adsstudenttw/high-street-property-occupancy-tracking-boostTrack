@@ -134,6 +134,7 @@ def main():
         seq_filter = {seq.strip() for seq in args.seqs.split(",") if seq.strip()}
 
     tracker = None
+    current_video_name = None
     results = {}
     frame_count = 0
     total_time = 0
@@ -156,13 +157,14 @@ def main():
 
         # Initialize tracker on first frame of a new video
         print(f"Processing {video_name}:{frame_id}\r", end="")
-        if frame_id == 1:
+        if tracker is None or video_name != current_video_name:
             print(f"Initializing tracker for {video_name}")
             print(f"Time spent: {total_time:.3f}, FPS {frame_count / (total_time + 1e-9):.2f}")
             if tracker is not None:
                 tracker.dump_cache()
 
             tracker = BoostTrack(video_name=video_name)
+            current_video_name = video_name
 
         pred = det(img, tag)
         start_time = time.time()
