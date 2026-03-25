@@ -43,10 +43,11 @@ TUNE_EXTRA_ARGS ?= --mlflow-log-summary-json
 BASELINE_STUDY_NAME ?= hspot_baseline_val
 BASELINE_STUDY_DB ?= $(optuna_root)/hspot_baseline_val.db
 BASELINE_SUMMARY_JSON ?= $(optuna_root)/$(BASELINE_STUDY_NAME)_summary.json
-BASELINE_MLFLOW_EXPERIMENT ?= BoostTrack-Baselines
+BASELINE_MLFLOW_EXPERIMENT ?= BoostTrack++
 BASELINE_MLFLOW_RUN_NAME ?= hspot_baseline_val
 BASELINE_EXTRA_ARGS ?=
-TUNE_STUDY_NAME ?= boosttrack_hota_tuning
+TUNE_MLFLOW_EXPERIMENT ?= $(BASELINE_MLFLOW_EXPERIMENT)
+TUNE_STUDY_NAME ?= hspot_hota_optuna
 TUNE_STUDY_DB ?= $(optuna_root)/$(TUNE_STUDY_NAME).db
 TUNE_SUMMARY_JSON ?= $(optuna_root)/$(TUNE_STUDY_NAME)_summary.json
 VIS_SPLIT ?= val
@@ -204,6 +205,7 @@ tune-hspot: surf-layout
 		--pruner-startup-trials $(TUNE_PRUNER_STARTUP_TRIALS) \
 		--early-stop-patience $(TUNE_EARLY_STOP_PATIENCE) \
 		--early-stop-min-delta $(TUNE_EARLY_STOP_MIN_DELTA) \
+		--mlflow-experiment $(TUNE_MLFLOW_EXPERIMENT) \
 		$${MLFLOW_TRACKING_URI:+--mlflow-tracking-uri $$MLFLOW_TRACKING_URI} \
 		$(TUNE_EXTRA_ARGS)
 
