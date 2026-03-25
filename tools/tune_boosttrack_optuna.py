@@ -56,7 +56,7 @@ def parse_args():
         default=os.getenv("BOOSTTRACK_DATA_DIR", "data"),
         help="Dataset root containing MOT17/MOT20/hspot folders.",
     )
-    parser.add_argument("--n-trials", type=int, default=128)
+    parser.add_argument("--n-trials", type=int, default=256)
     parser.add_argument("--timeout-sec", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--gpu-id", type=int, default=0, help="Single GPU id to use.")
@@ -86,10 +86,10 @@ def parse_args():
     parser.add_argument(
         "--early-stop-patience",
         type=int,
-        default=20,
+        default=40,
         help="Stop study if no best-trial improvement after this many completed trials. 0 disables.",
     )
-    parser.add_argument("--early-stop-min-delta", type=float, default=0.002)
+    parser.add_argument("--early-stop-min-delta", type=float, default=0.0005)
 
     # Runtime switches forwarded to main.py.
     parser.add_argument("--no-reid", action="store_true")
