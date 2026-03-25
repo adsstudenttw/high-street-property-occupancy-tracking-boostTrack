@@ -32,13 +32,13 @@ hspot_gt_root ?= $(results_root)/gt
 trackers_root ?= $(results_root)/trackers
 optuna_root ?= $(results_root)/optuna
 viz_root ?= $(results_root)/visualizations
-TUNE_TRIALS ?= 64
+TUNE_TRIALS ?= 128
 TUNE_GPU_ID ?= 0
-TUNE_PRUNING_SEQS ?= 2
+TUNE_PRUNING_SEQS ?= 0
 TUNE_TIMEOUT_SEC ?= 360000
 TUNE_PRUNER_STARTUP_TRIALS ?= 5
-TUNE_EARLY_STOP_PATIENCE ?= 10
-TUNE_EARLY_STOP_MIN_DELTA ?= 0.01
+TUNE_EARLY_STOP_PATIENCE ?= 20
+TUNE_EARLY_STOP_MIN_DELTA ?= 0.002
 TUNE_EXTRA_ARGS ?= --mlflow-log-summary-json
 BASELINE_STUDY_NAME ?= hspot_baseline_val
 BASELINE_STUDY_DB ?= $(optuna_root)/hspot_baseline_val.db
@@ -95,7 +95,7 @@ help:
 	@echo "  hspot-trackeval-setup Prepare TrackEval GT/seqmaps for hspot"
 	@echo "  hspot-trackeval-setup-allow-missing-gt  Same as above, but skips missing test GT files"
 	@echo "  baseline-hspot-val    Run default-parameter baseline on hspot val (logs to MLflow if URI set)"
-	@echo "  tune-hspot            Run Optuna tuning on hspot (train pruning, val objective, test final eval)"
+	@echo "  tune-hspot            Run Optuna tuning on hspot (val objective, test final eval; train pruning off by default)"
 	@echo "  visualize-hspot       Render hspot frames with GT and prediction boxes overlaid"
 	@echo ""
 	@echo "Key vars:"

@@ -107,7 +107,7 @@ make mlflow-smoke-test
 make baseline-hspot-val
 make tune-hspot
 ```
-This workflow uses `train` for pruning, `val` for the Optuna objective, and `test` for final best-trial evaluation.
+This workflow uses `val` for the Optuna objective and `test` for final best-trial evaluation. Train pruning is disabled by default.
 If test GT is unavailable:
 ```shell
 make tune-hspot TUNE_EXTRA_ARGS="--skip-final-test-eval"
