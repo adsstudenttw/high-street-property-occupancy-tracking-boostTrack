@@ -3,6 +3,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -278,8 +279,8 @@ def tracker_name_from_exp(exp_name, no_post):
     return exp_name if no_post else f"{exp_name}_post_gbi"
 
 
-def parse_hota(summary_file):
-    """Read TrackEval summary output and return the scalar HOTA value."""
+def parse_trackeval_summary(summary_file):
+    """Read TrackEval summary output and return all summary metrics as floats."""
     if not summary_file.exists():
         raise RuntimeError(f"TrackEval summary not found: {summary_file}")
     with summary_file.open("r", encoding="utf-8") as f:
@@ -289,10 +290,28 @@ def parse_hota(summary_file):
         raise RuntimeError(f"Unexpected summary format in {summary_file}")
     headers = rows[0]
     values = rows[1]
-    result = dict(zip(headers, values))
+    result = {header: float(value) for header, value in zip(headers, values)}
     if "HOTA" not in result:
         raise RuntimeError(f"HOTA field missing in {summary_file}")
-    return float(result["HOTA"])
+    return result
+
+
+def normalize_metric_name(name):
+    """Convert TrackEval metric names into MLflow-friendly snake_case keys."""
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    name = re.sub(r"[^0-9A-Za-z]+", "_", name)
+    return re.sub(r"_+", "_", name).strip("_").lower()
+
+
+def log_trackeval_metrics(mlflow, prefix, metrics, step=None):
+    """Log a TrackEval summary dict to MLflow with a stage prefix."""
+    if mlflow is None:
+        return
+    mlflow.log_metrics(
+        {f"{prefix}_{normalize_metric_name(name)}": value for name, value in metrics.items()},
+        step=step,
+    )
 
 
 def load_seqmap_sequences(gt_folder, benchmark, split_name):
@@ -396,7 +415,7 @@ def build_eval_cmd(args, tracker_name, split_name, seq_subset):
 
 
 def evaluate_run(args, env, exp_name, split_name, seq_subset, params):
-    """Run tracking + TrackEval and return HOTA for one split."""
+    """Run tracking + TrackEval and return the TrackEval summary metrics for one split."""
     cleanup_experiment(args.trackers_folder, args.benchmark, split_name, exp_name)
     run_cmd(build_main_cmd(args, exp_name, split_name, params, seq_subset), env=env)
 
@@ -409,7 +428,7 @@ def evaluate_run(args, env, exp_name, split_name, seq_subset, params):
         / tracker_name
         / "pedestrian_summary.txt"
     )
-    return parse_hota(summary_file)
+    return parse_trackeval_summary(summary_file)
 
 
 class EarlyStoppingCallback:
@@ -710,11 +729,15 @@ def run_pruning_stage(args, env, mlflow, trial, params, trial_prefix, train_subs
     )
     prune_run_status = "FAILED"
     try:
-        prune_hota = evaluate_run(args, env, prune_exp, TRAIN_SPLIT, train_subset, params)
+        prune_metrics = evaluate_run(
+            args, env, prune_exp, TRAIN_SPLIT, train_subset, params
+        )
+        prune_hota = prune_metrics["HOTA"]
         trial.report(prune_hota, step=0)
         trial.set_user_attr("subset_train_hota", prune_hota)
+        trial.set_user_attr("subset_train_metrics", prune_metrics)
         if mlflow is not None:
-            mlflow.log_metric("subset_train_hota", prune_hota, step=0)
+            log_trackeval_metrics(mlflow, "subset_train", prune_metrics, step=0)
         if trial.should_prune():
             if mlflow is not None:
                 mlflow.set_tag("trial_state", "PRUNED")
@@ -758,11 +781,13 @@ def run_validation_stage(args, env, mlflow, trial, params, trial_prefix, baselin
     )
     eval_run_status = "FAILED"
     try:
-        val_hota = evaluate_run(args, env, full_exp, VAL_SPLIT, None, params)
+        val_metrics = evaluate_run(args, env, full_exp, VAL_SPLIT, None, params)
+        val_hota = val_metrics["HOTA"]
         trial.report(val_hota, step=1)
         trial.set_user_attr("val_exp_name", full_exp)
+        trial.set_user_attr("val_metrics", val_metrics)
         if mlflow is not None:
-            mlflow.log_metric("val_hota", val_hota, step=1)
+            log_trackeval_metrics(mlflow, "val", val_metrics, step=1)
             mlflow.set_tags({"trial_state": "COMPLETE", "val_exp_name": full_exp})
         eval_run_status = "FINISHED"
         return val_hota, full_exp
@@ -831,12 +856,15 @@ def evaluate_best_on_test(args, env, best_params, mlflow):
         mlflow.set_tags({"stage": "final_eval_best_hpo"})
         mlflow.log_params(best_params)
     try:
-        test_hota = evaluate_run(args, env, final_test_exp, TEST_SPLIT, None, best_params)
+        test_metrics = evaluate_run(
+            args, env, final_test_exp, TEST_SPLIT, None, best_params
+        )
+        test_hota = test_metrics["HOTA"]
         print(f"Final test HOTA: {test_hota:.4f}")
         if mlflow is not None:
-            mlflow.log_metric("test_hota", test_hota)
+            log_trackeval_metrics(mlflow, "test", test_metrics)
             final_test_run_status = "FINISHED"
-        return final_test_exp, test_hota
+        return final_test_exp, test_metrics
     except Exception:
         if mlflow is not None:
             mlflow.set_tag("trial_state", "FAILED")
@@ -853,7 +881,7 @@ def build_summary(
     best_trial,
     best_params,
     final_test_exp,
-    test_hota,
+    test_metrics,
     db_path,
     tracking_uri,
     fixed_params,
@@ -873,10 +901,12 @@ def build_summary(
         ),
         "best_trial_number": best_trial.number,
         "best_val_hota": best_trial.value,
+        "best_val_metrics": best_trial.user_attrs.get("val_metrics"),
         "best_params": best_params,
         "best_val_exp_name": best_trial.user_attrs.get("val_exp_name"),
         "final_test_exp_name": final_test_exp,
-        "final_test_hota": test_hota,
+        "final_test_hota": test_metrics["HOTA"] if test_metrics else None,
+        "final_test_metrics": test_metrics,
         "optuna_db": str(db_path),
         "mlflow_tracking_uri": tracking_uri,
         "fixed_params": fixed_params,
@@ -894,7 +924,9 @@ def log_parent_mlflow_results(mlflow, args, summary, output_json, db_path):
     """Log final best metrics, tags, and optional artifacts to the parent MLflow run."""
     if mlflow is None:
         return
-    mlflow.log_metric("best_val_hota", summary["best_val_hota"])
+    log_trackeval_metrics(mlflow, "best_val", summary["best_val_metrics"] or {})
+    if summary.get("final_test_metrics"):
+        log_trackeval_metrics(mlflow, "final_test", summary["final_test_metrics"])
     mlflow.set_tags(
         {
             "best_trial_number": summary["best_trial_number"],
@@ -929,7 +961,7 @@ def main():
         run_optimization(args, study, objective)
         best_trial = get_best_trial(study)
         best_params = dict(best_trial.params)
-        final_test_exp, test_hota = evaluate_best_on_test(
+        final_test_exp, test_metrics = evaluate_best_on_test(
             args, env, best_params, mlflow
         )
         summary = build_summary(
@@ -938,7 +970,7 @@ def main():
             best_trial,
             best_params,
             final_test_exp,
-            test_hota,
+            test_metrics,
             db_path,
             tracking_uri,
             fixed_params,
